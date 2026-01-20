@@ -23,6 +23,14 @@ struct SettingsView: View {
                     Label("Output", systemImage: "text.cursor")
                 }
                 .environmentObject(appState)
+
+            if appState.debugModeEnabled {
+                DebugSettingsView()
+                    .tabItem {
+                        Label("Debug", systemImage: "ladybug")
+                    }
+                    .environmentObject(appState)
+            }
         }
         .tabViewStyle(.automatic)
         .frame(minWidth: 500, minHeight: 450)
@@ -34,37 +42,38 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Hotkey") {
-                HStack {
-                    Text("Trigger:")
-                    Spacer()
-                    HotkeyRecorderView(config: $appState.hotkeyConfig)
-                }
-
-                Picker("Mode:", selection: $appState.recordingMode) {
-                    ForEach(RecordingMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
+            Section("Hotkeys") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Toggle")
+                                .fontWeight(.medium)
+                            Text("Press once to start, again to stop")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        HotkeyRecorderView(config: $appState.toggleHotkeyConfig)
                     }
-                }
-                .pickerStyle(.segmented)
 
-                if appState.recordingMode == .pushToTalk {
-                    Text("Hold the hotkey to record, release to transcribe")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("Press the hotkey once to start, again to stop")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Push-to-Talk")
+                                .fontWeight(.medium)
+                            Text("Hold to record, release to transcribe")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        HotkeyRecorderView(config: $appState.pushToTalkHotkeyConfig)
+                    }
                 }
             }
 
-            Section("Overlay") {
-                Picker("Position:", selection: $appState.overlayPosition) {
-                    ForEach(OverlayPosition.allCases) { position in
-                        Text(position.rawValue).tag(position)
-                    }
-                }
+            Section("Overlay Position") {
+                OverlayPositionGrid(selection: $appState.overlayPosition)
             }
 
             Section("Startup") {
@@ -79,6 +88,10 @@ struct GeneralSettingsView: View {
                     }
                     Spacer()
                 }
+            }
+
+            Section("Advanced") {
+                Toggle("Debug Mode", isOn: $appState.debugModeEnabled)
             }
         }
         .formStyle(.grouped)
@@ -361,6 +374,168 @@ struct OutputSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+}
+
+struct OverlayPositionGrid: View {
+    @Binding var selection: OverlayPosition
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Top row
+            HStack(spacing: 8) {
+                ForEach(OverlayPosition.topRow) { position in
+                    PositionCell(position: position, isSelected: selection == position)
+                        .onTapGesture { selection = position }
+                }
+            }
+
+            // Screen representation
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.secondary.opacity(0.1))
+                .frame(height: 2)
+
+            // Bottom row
+            HStack(spacing: 8) {
+                ForEach(OverlayPosition.bottomRow) { position in
+                    PositionCell(position: position, isSelected: selection == position)
+                        .onTapGesture { selection = position }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+struct PositionCell: View {
+    let position: OverlayPosition
+    let isSelected: Bool
+
+    private var label: String {
+        switch position {
+        case .topLeft: return "Top Left"
+        case .topCenter: return "Top"
+        case .topRight: return "Top Right"
+        case .bottomLeft: return "Bottom Left"
+        case .bottomCenter: return "Bottom"
+        case .bottomRight: return "Bottom Right"
+        }
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.caption)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.15))
+            .foregroundColor(isSelected ? .white : .primary)
+            .cornerRadius(6)
+    }
+}
+
+struct DebugSettingsView: View {
+    @EnvironmentObject var appState: AppState
+
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header with clear button
+            if !appState.debugLogs.isEmpty {
+                HStack {
+                    Spacer()
+                    Button("Clear Logs") {
+                        appState.clearDebugLogs()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding()
+
+                Divider()
+            }
+
+            if appState.debugLogs.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary)
+                    Text("No logs yet")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text("Debug logs will appear here as you use the app.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(appState.debugLogs) { entry in
+                        DebugLogRow(entry: entry, dateFormatter: dateFormatter)
+                    }
+                }
+                .listStyle(.plain)
+            }
+
+            // System info footer
+            Divider()
+            HStack {
+                Text("Model: \(appState.whisperModel.rawValue)")
+                Spacer()
+                Text("Engine: \(appState.transcriptionEngine.rawValue)")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(Color.secondary.opacity(0.05))
+        }
+    }
+}
+
+struct DebugLogRow: View {
+    let entry: DebugLogEntry
+    let dateFormatter: DateFormatter
+
+    private var levelColor: Color {
+        switch entry.level {
+        case .info: return .blue
+        case .warning: return .orange
+        case .error: return .red
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(entry.level.rawValue)
+                .font(.caption2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(levelColor)
+                .cornerRadius(3)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(entry.source)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    Spacer()
+                    Text(dateFormatter.string(from: entry.timestamp))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                Text(entry.message)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.primary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

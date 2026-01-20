@@ -37,23 +37,47 @@ struct RecordingView: View {
     let duration: TimeInterval
 
     @State private var isPulsing = false
+    @State private var ringScale: CGFloat = 1.0
+
+    // Match the waveform colors
+    private let accentColor = Color(red: 0.5, green: 0.5, blue: 1.0)
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                // Pulsing recording indicator
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 12, height: 12)
-                    .scaleEffect(isPulsing ? 1.2 : 1.0)
-                    .animation(
-                        Animation.easeInOut(duration: 0.5)
-                            .repeatForever(autoreverses: true),
-                        value: isPulsing
-                    )
+                // Modern pulsing recording indicator with ring
+                ZStack {
+                    // Outer pulsing ring
+                    Circle()
+                        .stroke(accentColor.opacity(0.3), lineWidth: 2)
+                        .frame(width: 18, height: 18)
+                        .scaleEffect(ringScale)
+                        .opacity(2.0 - ringScale)
+
+                    // Inner solid circle
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [accentColor, accentColor.opacity(0.7)],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 6
+                            )
+                        )
+                        .frame(width: 10, height: 10)
+                        .shadow(color: accentColor.opacity(0.6), radius: 4)
+                }
+                .onAppear {
+                    withAnimation(
+                        .easeOut(duration: 1.2)
+                        .repeatForever(autoreverses: false)
+                    ) {
+                        ringScale = 1.8
+                    }
+                }
 
                 Text("Recording")
-                    .font(.headline)
+                    .font(.system(.headline, design: .rounded))
                     .foregroundColor(.primary)
 
                 Spacer()
@@ -66,9 +90,6 @@ struct RecordingView: View {
             // Audio level waveform
             AudioWaveformView(level: audioLevel)
                 .frame(height: 30)
-        }
-        .onAppear {
-            isPulsing = true
         }
     }
 
@@ -83,15 +104,26 @@ struct RecordingView: View {
 struct AudioWaveformView: View {
     let level: Float
 
-    private let barCount = 20
-    @State private var heights: [CGFloat] = Array(repeating: 0.2, count: 20)
+    private let barCount = 24
+    @State private var heights: [CGFloat] = Array(repeating: 0.15, count: 24)
+    @State private var phase: Double = 0
+
+    // Modern gradient colors
+    private let gradientColors = [
+        Color(red: 0.4, green: 0.6, blue: 1.0),  // Soft blue
+        Color(red: 0.6, green: 0.4, blue: 1.0),  // Purple
+        Color(red: 0.4, green: 0.8, blue: 0.9)   // Cyan
+    ]
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 3) {
             ForEach(0..<barCount, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(barColor(for: index))
-                    .frame(width: 4, height: heights[index] * 30)
+                WaveformBar(
+                    height: heights[index],
+                    index: index,
+                    totalBars: barCount,
+                    gradientColors: gradientColors
+                )
             }
         }
         .onChange(of: level) { _, newLevel in
@@ -102,31 +134,40 @@ struct AudioWaveformView: View {
         }
     }
 
-    private func barColor(for index: Int) -> Color {
-        let height = heights[index]
-
-        if height > 0.7 {
-            return .red
-        } else if height > 0.5 {
-            return .orange
-        } else {
-            return .accentColor
-        }
-    }
-
     private func updateHeights(with level: Float) {
-        let baseLevel = CGFloat(level)
+        let baseLevel = CGFloat(max(0.05, level))
 
-        withAnimation(.easeOut(duration: 0.05)) {
+        withAnimation(.spring(response: 0.15, dampingFraction: 0.7)) {
             for i in 0..<barCount {
-                // Create a wave pattern with some randomness
-                let position = CGFloat(i) / CGFloat(barCount - 1)
-                let wave = sin(position * .pi) * 0.3 + 0.2
-                let randomFactor = CGFloat.random(in: 0.8...1.2)
-                let newHeight = max(0.1, min(1.0, baseLevel * wave * randomFactor * 2))
+                // Create a smooth wave pattern emanating from center
+                let centerDistance = abs(CGFloat(i) - CGFloat(barCount - 1) / 2) / CGFloat(barCount / 2)
+                let wave = 1.0 - (centerDistance * 0.5)
+                let randomFactor = CGFloat.random(in: 0.85...1.15)
+                let newHeight = max(0.08, min(1.0, baseLevel * wave * randomFactor * 1.8))
                 heights[i] = newHeight
             }
         }
+    }
+}
+
+struct WaveformBar: View {
+    let height: CGFloat
+    let index: Int
+    let totalBars: Int
+    let gradientColors: [Color]
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(
+                LinearGradient(
+                    colors: gradientColors,
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+            )
+            .frame(width: 5, height: max(4, height * 30))
+            .opacity(0.7 + (height * 0.3))
+            .shadow(color: gradientColors[1].opacity(height * 0.5), radius: height * 4, y: 0)
     }
 }
 

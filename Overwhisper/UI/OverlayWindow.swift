@@ -48,6 +48,11 @@ class OverlayWindow: NSPanel {
                 x: screenFrame.minX + padding,
                 y: screenFrame.maxY - windowSize.height - padding
             )
+        case .topCenter:
+            origin = NSPoint(
+                x: screenFrame.midX - windowSize.width / 2,
+                y: screenFrame.maxY - windowSize.height - padding
+            )
         case .topRight:
             origin = NSPoint(
                 x: screenFrame.maxX - windowSize.width - padding,
@@ -58,15 +63,15 @@ class OverlayWindow: NSPanel {
                 x: screenFrame.minX + padding,
                 y: screenFrame.minY + padding
             )
+        case .bottomCenter:
+            origin = NSPoint(
+                x: screenFrame.midX - windowSize.width / 2,
+                y: screenFrame.minY + padding
+            )
         case .bottomRight:
             origin = NSPoint(
                 x: screenFrame.maxX - windowSize.width - padding,
                 y: screenFrame.minY + padding
-            )
-        case .center:
-            origin = NSPoint(
-                x: screenFrame.midX - windowSize.width / 2,
-                y: screenFrame.midY - windowSize.height / 2
             )
         }
 

@@ -18,6 +18,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
 
     private var cancellables = Set<AnyCancellable>()
+    private var isInitializingEngine = false
+    private var initializationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon - menu bar only
@@ -59,9 +61,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWindow = OverlayWindow(appState: appState)
         textInserter = TextInserter()
         modelManager = ModelManager(appState: appState)
-        hotkeyManager = HotkeyManager(appState: appState) { [weak self] event in
+        hotkeyManager = HotkeyManager(appState: appState) { [weak self] event, mode in
             Task { @MainActor in
-                self?.handleHotkeyEvent(event)
+                self?.handleHotkeyEvent(event, mode: mode)
             }
         }
     }
@@ -81,11 +83,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .assign(to: &appState.$audioLevel)
 
-        // Re-register hotkey when config changes
-        appState.$hotkeyConfig
+        // Re-register hotkeys when configs change
+        appState.$toggleHotkeyConfig
             .dropFirst()
             .sink { [weak self] config in
-                self?.hotkeyManager.registerHotkey(config: config)
+                self?.hotkeyManager.registerToggleHotkey(config: config)
+            }
+            .store(in: &cancellables)
+
+        appState.$pushToTalkHotkeyConfig
+            .dropFirst()
+            .sink { [weak self] config in
+                self?.hotkeyManager.registerPushToTalkHotkey(config: config)
             }
             .store(in: &cancellables)
 
@@ -173,18 +182,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func initializeTranscriptionEngine() async {
+        // Cancel any existing initialization
+        initializationTask?.cancel()
+
+        // Prevent concurrent initialization
+        guard !isInitializingEngine else {
+            print("Engine initialization already in progress, skipping")
+            return
+        }
+
+        isInitializingEngine = true
+        print("Starting engine initialization for: \(appState.transcriptionEngine.rawValue)")
+
         switch appState.transcriptionEngine {
         case .whisperKit:
             let engine = WhisperKitEngine(appState: appState, modelManager: modelManager)
+            transcriptionEngine = engine  // Assign first so it's available
             await engine.initialize()
-            transcriptionEngine = engine
         case .openAI:
             transcriptionEngine = OpenAIEngine(apiKey: appState.openAIAPIKey)
         }
+
+        isInitializingEngine = false
+        print("Engine initialization complete")
     }
 
-    private func handleHotkeyEvent(_ event: HotkeyEvent) {
-        switch appState.recordingMode {
+    private func handleHotkeyEvent(_ event: HotkeyEvent, mode: HotkeyMode) {
+        switch mode {
         case .pushToTalk:
             if event == .keyDown {
                 startRecording()
@@ -213,6 +237,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startRecording() {
         guard appState.recordingState.isIdle else { return }
 
+        // Check if engine is still initializing
+        if isInitializingEngine {
+            showNotification(title: "Please Wait", body: "Model is still loading...")
+            return
+        }
+
         // Check if model is available when using WhisperKit
         if appState.transcriptionEngine == .whisperKit {
             let currentModel = appState.whisperModel.rawValue
@@ -226,6 +256,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if appState.transcriptionEngine == .openAI && appState.openAIAPIKey.isEmpty {
             showNotification(title: "API Key Required", body: "Please set your OpenAI API key in Settings.")
             openSettings()
+            return
+        }
+
+        // Ensure we have an engine
+        guard transcriptionEngine != nil else {
+            showNotification(title: "Engine Not Ready", body: "Transcription engine is not initialized. Please wait or check settings.")
             return
         }
 
@@ -312,6 +348,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showNotification(title: String, body: String) {
+        // UNUserNotificationCenter requires a proper app bundle
+        // When running via swift run, we don't have one, so use a fallback
+        guard Bundle.main.bundleIdentifier != nil else {
+            // Fallback: just print to console when running without bundle
+            print("[\(title)] \(body)")
+            return
+        }
+
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

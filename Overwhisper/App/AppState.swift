@@ -3,6 +3,28 @@ import Combine
 import SwiftUI
 import Carbon.HIToolbox
 
+struct DebugLogEntry: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let level: DebugLogLevel
+    let message: String
+    let source: String
+
+    enum DebugLogLevel: String {
+        case info = "INFO"
+        case warning = "WARN"
+        case error = "ERROR"
+
+        var color: String {
+            switch self {
+            case .info: return "blue"
+            case .warning: return "orange"
+            case .error: return "red"
+            }
+        }
+    }
+}
+
 enum RecordingState: Equatable {
     case idle
     case recording
@@ -24,12 +46,17 @@ enum RecordingMode: String, CaseIterable, Identifiable {
 
 enum OverlayPosition: String, CaseIterable, Identifiable {
     case topLeft = "Top Left"
+    case topCenter = "Top Center"
     case topRight = "Top Right"
     case bottomLeft = "Bottom Left"
+    case bottomCenter = "Bottom Center"
     case bottomRight = "Bottom Right"
-    case center = "Center"
 
     var id: String { rawValue }
+
+    // Grid layout helpers
+    static var topRow: [OverlayPosition] { [.topLeft, .topCenter, .topRight] }
+    static var bottomRow: [OverlayPosition] { [.bottomLeft, .bottomCenter, .bottomRight] }
 }
 
 enum TranscriptionEngineType: String, CaseIterable, Identifiable {
@@ -88,7 +115,12 @@ struct HotkeyConfig: Codable, Equatable {
     var keyCode: UInt32
     var modifiers: UInt32
 
-    static let `default` = HotkeyConfig(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey))
+    // Default: Option+Space for toggle, Option+Shift+Space for push-to-talk
+    static let defaultToggle = HotkeyConfig(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey))
+    static let defaultPushToTalk = HotkeyConfig(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey | shiftKey))
+
+    // Legacy default for migration
+    static let `default` = defaultToggle
 
     var displayString: String {
         var parts: [String] = []
@@ -206,12 +238,25 @@ class AppState: ObservableObject {
             LaunchAtLogin.isEnabled = startAtLogin
         }
     }
-    @Published var hotkeyConfig: HotkeyConfig {
+    @Published var toggleHotkeyConfig: HotkeyConfig {
         didSet {
-            if let data = try? JSONEncoder().encode(hotkeyConfig) {
-                UserDefaults.standard.set(data, forKey: "hotkeyConfig")
+            if let data = try? JSONEncoder().encode(toggleHotkeyConfig) {
+                UserDefaults.standard.set(data, forKey: "toggleHotkeyConfig")
             }
         }
+    }
+    @Published var pushToTalkHotkeyConfig: HotkeyConfig {
+        didSet {
+            if let data = try? JSONEncoder().encode(pushToTalkHotkeyConfig) {
+                UserDefaults.standard.set(data, forKey: "pushToTalkHotkeyConfig")
+            }
+        }
+    }
+
+    // Legacy property for backwards compatibility
+    var hotkeyConfig: HotkeyConfig {
+        get { toggleHotkeyConfig }
+        set { toggleHotkeyConfig = newValue }
     }
 
     // Model state
@@ -224,6 +269,13 @@ class AppState: ObservableObject {
     // Last transcription result
     @Published var lastTranscription: String = ""
     @Published var lastError: String?
+
+    // Debug mode
+    @Published var debugModeEnabled: Bool {
+        didSet { UserDefaults.standard.set(debugModeEnabled, forKey: "debugModeEnabled") }
+    }
+    @Published var debugLogs: [DebugLogEntry] = []
+    private let maxDebugLogs = 100
 
     private var recordingTimer: Timer?
 
@@ -255,12 +307,40 @@ class AppState: ObservableObject {
         self.showNotificationOnError = UserDefaults.standard.object(forKey: "showNotificationOnError") as? Bool ?? true
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
 
-        if let hotkeyData = UserDefaults.standard.data(forKey: "hotkeyConfig"),
+        // Load toggle hotkey (with migration from legacy hotkeyConfig)
+        if let hotkeyData = UserDefaults.standard.data(forKey: "toggleHotkeyConfig"),
            let config = try? JSONDecoder().decode(HotkeyConfig.self, from: hotkeyData) {
-            self.hotkeyConfig = config
+            self.toggleHotkeyConfig = config
+        } else if let legacyData = UserDefaults.standard.data(forKey: "hotkeyConfig"),
+                  let legacyConfig = try? JSONDecoder().decode(HotkeyConfig.self, from: legacyData) {
+            // Migrate from legacy single hotkey
+            self.toggleHotkeyConfig = legacyConfig
         } else {
-            self.hotkeyConfig = .default
+            self.toggleHotkeyConfig = .defaultToggle
         }
+
+        // Load push-to-talk hotkey
+        if let hotkeyData = UserDefaults.standard.data(forKey: "pushToTalkHotkeyConfig"),
+           let config = try? JSONDecoder().decode(HotkeyConfig.self, from: hotkeyData) {
+            self.pushToTalkHotkeyConfig = config
+        } else {
+            self.pushToTalkHotkeyConfig = .defaultPushToTalk
+        }
+
+        self.debugModeEnabled = UserDefaults.standard.bool(forKey: "debugModeEnabled")
+    }
+
+    func addDebugLog(_ message: String, level: DebugLogEntry.DebugLogLevel = .info, source: String = "App") {
+        guard debugModeEnabled else { return }
+        let entry = DebugLogEntry(timestamp: Date(), level: level, message: message, source: source)
+        debugLogs.insert(entry, at: 0)
+        if debugLogs.count > maxDebugLogs {
+            debugLogs.removeLast()
+        }
+    }
+
+    func clearDebugLogs() {
+        debugLogs.removeAll()
     }
 
     func startRecordingTimer() {

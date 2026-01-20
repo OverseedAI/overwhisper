@@ -7,77 +7,97 @@ enum HotkeyEvent {
     case keyUp
 }
 
+enum HotkeyMode {
+    case toggle
+    case pushToTalk
+}
+
 @MainActor
 class HotkeyManager {
-    private var hotKey: HotKey?
+    private var toggleHotKey: HotKey?
+    private var pushToTalkHotKey: HotKey?
     private let appState: AppState
-    private let eventHandler: (HotkeyEvent) -> Void
+    private let eventHandler: (HotkeyEvent, HotkeyMode) -> Void
 
-    // For push-to-talk, we need to track key up events
-    nonisolated(unsafe) private var globalMonitor: Any?
-    nonisolated(unsafe) private var localMonitor: Any?
-    private var isKeyDown = false
+    // Track key state for push-to-talk
+    private var isPushToTalkKeyDown = false
 
-    init(appState: AppState, eventHandler: @escaping (HotkeyEvent) -> Void) {
+    init(appState: AppState, eventHandler: @escaping (HotkeyEvent, HotkeyMode) -> Void) {
         self.appState = appState
         self.eventHandler = eventHandler
 
-        registerHotkey(config: appState.hotkeyConfig)
+        registerHotkeys()
         _ = checkAccessibilityPermission()
     }
 
-    func registerHotkey(config: HotkeyConfig) {
-        unregisterHotkey()
+    func registerHotkeys() {
+        registerToggleHotkey(config: appState.toggleHotkeyConfig)
+        registerPushToTalkHotkey(config: appState.pushToTalkHotkeyConfig)
+    }
 
-        // Convert our config to HotKey library format
+    func registerToggleHotkey(config: HotkeyConfig) {
+        toggleHotKey = nil
+
         guard let key = Key(carbonKeyCode: UInt32(config.keyCode)) else {
-            print("Invalid key code: \(config.keyCode)")
+            print("Invalid toggle key code: \(config.keyCode)")
             return
         }
 
-        var modifiers: NSEvent.ModifierFlags = []
-        if config.modifiers & UInt32(optionKey) != 0 {
-            modifiers.insert(.option)
+        let modifiers = convertModifiers(config.modifiers)
+        toggleHotKey = HotKey(key: key, modifiers: modifiers)
+
+        toggleHotKey?.keyDownHandler = { [weak self] in
+            self?.eventHandler(.keyDown, .toggle)
         }
-        if config.modifiers & UInt32(controlKey) != 0 {
-            modifiers.insert(.control)
-        }
-        if config.modifiers & UInt32(shiftKey) != 0 {
-            modifiers.insert(.shift)
-        }
-        if config.modifiers & UInt32(cmdKey) != 0 {
-            modifiers.insert(.command)
+        // Toggle mode doesn't need keyUp
+    }
+
+    func registerPushToTalkHotkey(config: HotkeyConfig) {
+        pushToTalkHotKey = nil
+
+        guard let key = Key(carbonKeyCode: UInt32(config.keyCode)) else {
+            print("Invalid push-to-talk key code: \(config.keyCode)")
+            return
         }
 
-        hotKey = HotKey(key: key, modifiers: modifiers)
+        let modifiers = convertModifiers(config.modifiers)
+        pushToTalkHotKey = HotKey(key: key, modifiers: modifiers)
 
-        hotKey?.keyDownHandler = { [weak self] in
+        pushToTalkHotKey?.keyDownHandler = { [weak self] in
             guard let self = self else { return }
-            self.isKeyDown = true
-            self.eventHandler(.keyDown)
+            self.isPushToTalkKeyDown = true
+            self.eventHandler(.keyDown, .pushToTalk)
         }
 
-        hotKey?.keyUpHandler = { [weak self] in
+        pushToTalkHotKey?.keyUpHandler = { [weak self] in
             guard let self = self else { return }
-            if self.isKeyDown {
-                self.isKeyDown = false
-                self.eventHandler(.keyUp)
+            if self.isPushToTalkKeyDown {
+                self.isPushToTalkKeyDown = false
+                self.eventHandler(.keyUp, .pushToTalk)
             }
         }
     }
 
-    func unregisterHotkey() {
-        hotKey = nil
-
-        if let monitor = globalMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalMonitor = nil
+    private func convertModifiers(_ carbonModifiers: UInt32) -> NSEvent.ModifierFlags {
+        var modifiers: NSEvent.ModifierFlags = []
+        if carbonModifiers & UInt32(optionKey) != 0 {
+            modifiers.insert(.option)
         }
-
-        if let monitor = localMonitor {
-            NSEvent.removeMonitor(monitor)
-            localMonitor = nil
+        if carbonModifiers & UInt32(controlKey) != 0 {
+            modifiers.insert(.control)
         }
+        if carbonModifiers & UInt32(shiftKey) != 0 {
+            modifiers.insert(.shift)
+        }
+        if carbonModifiers & UInt32(cmdKey) != 0 {
+            modifiers.insert(.command)
+        }
+        return modifiers
+    }
+
+    func unregisterHotkeys() {
+        toggleHotKey = nil
+        pushToTalkHotKey = nil
     }
 
     @discardableResult
