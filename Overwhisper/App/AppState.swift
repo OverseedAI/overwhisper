@@ -40,32 +40,47 @@ enum TranscriptionEngineType: String, CaseIterable, Identifiable {
 }
 
 enum WhisperModel: String, CaseIterable, Identifiable {
-    case tiny = "tiny"
-    case tinyEn = "tiny.en"
-    case base = "base"
-    case baseEn = "base.en"
-    case small = "small"
+    // English-only models (faster, more accurate for English)
     case smallEn = "small.en"
-    case medium = "medium"
     case mediumEn = "medium.en"
-    case large = "large-v3"
-    case largeTurbo = "large-v3-turbo"
+    // Multilingual models (supports 99+ languages including Korean, Japanese, Chinese, etc.)
+    case small = "small"
+    case medium = "medium"
+    case large = "large-v3_turbo"
 
     var id: String { rawValue }
 
+    var isEnglishOnly: Bool {
+        switch self {
+        case .smallEn, .mediumEn: return true
+        case .small, .medium, .large: return false
+        }
+    }
+
     var displayName: String {
         switch self {
-        case .tiny: return "Tiny (39M)"
-        case .tinyEn: return "Tiny English (39M)"
-        case .base: return "Base (74M)"
-        case .baseEn: return "Base English (74M)"
-        case .small: return "Small (244M)"
-        case .smallEn: return "Small English (244M)"
-        case .medium: return "Medium (769M)"
-        case .mediumEn: return "Medium English (769M)"
-        case .large: return "Large v3 (1.5B)"
-        case .largeTurbo: return "Large v3 Turbo (809M)"
+        case .smallEn: return "Small"
+        case .mediumEn: return "Medium"
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
         }
+    }
+
+    var size: String {
+        switch self {
+        case .smallEn, .small: return "~500 MB"
+        case .mediumEn, .medium: return "~1.5 GB"
+        case .large: return "~1.6 GB"
+        }
+    }
+
+    static var englishModels: [WhisperModel] {
+        [.smallEn, .mediumEn]
+    }
+
+    static var multilingualModels: [WhisperModel] {
+        [.small, .medium, .large]
     }
 }
 
@@ -203,6 +218,8 @@ class AppState: ObservableObject {
     @Published var isModelDownloaded: Bool = false
     @Published var modelDownloadProgress: Double = 0.0
     @Published var isDownloadingModel: Bool = false
+    @Published var downloadedModels: Set<String> = []
+    @Published var currentlyDownloadingModel: String?
 
     // Last transcription result
     @Published var lastTranscription: String = ""
@@ -221,8 +238,8 @@ class AppState: ObservableObject {
         let engineStr = UserDefaults.standard.string(forKey: "transcriptionEngine") ?? TranscriptionEngineType.whisperKit.rawValue
         self.transcriptionEngine = TranscriptionEngineType(rawValue: engineStr) ?? .whisperKit
 
-        let modelStr = UserDefaults.standard.string(forKey: "whisperModel") ?? WhisperModel.baseEn.rawValue
-        self.whisperModel = WhisperModel(rawValue: modelStr) ?? .baseEn
+        let modelStr = UserDefaults.standard.string(forKey: "whisperModel") ?? WhisperModel.smallEn.rawValue
+        self.whisperModel = WhisperModel(rawValue: modelStr) ?? .smallEn
 
         self.language = UserDefaults.standard.string(forKey: "language") ?? "auto"
         self.enableCloudFallback = UserDefaults.standard.bool(forKey: "enableCloudFallback")

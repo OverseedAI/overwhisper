@@ -213,6 +213,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startRecording() {
         guard appState.recordingState.isIdle else { return }
 
+        // Check if model is available when using WhisperKit
+        if appState.transcriptionEngine == .whisperKit {
+            let currentModel = appState.whisperModel.rawValue
+            if !appState.downloadedModels.contains(currentModel) && !appState.isDownloadingModel {
+                showNoModelAlert()
+                return
+            }
+        }
+
+        // Check if OpenAI API key is set when using OpenAI
+        if appState.transcriptionEngine == .openAI && appState.openAIAPIKey.isEmpty {
+            showNotification(title: "API Key Required", body: "Please set your OpenAI API key in Settings.")
+            openSettings()
+            return
+        }
+
         do {
             try audioRecorder.startRecording()
             appState.recordingState = .recording
@@ -224,6 +240,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if appState.showNotificationOnError {
                 showNotification(title: "Recording Error", body: error.localizedDescription)
             }
+        }
+    }
+
+    private func showNoModelAlert() {
+        let alert = NSAlert()
+        alert.messageText = "No Model Downloaded"
+        alert.informativeText = "You need to download a transcription model before recording. Would you like to open Settings to download one?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Cancel")
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            openSettings()
         }
     }
 
@@ -260,6 +291,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 overlayWindow.hide()
 
             } catch {
+                print("Transcription error: \(error)")
                 appState.recordingState = .error(error.localizedDescription)
                 appState.lastError = error.localizedDescription
                 overlayWindow.hide()
@@ -295,22 +327,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings() {
+        // Refresh downloaded models list
+        modelManager.scanForModels()
+
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let settingsView = SettingsView()
+        let settingsView = SettingsView(modelManager: modelManager)
             .environmentObject(appState)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 450, height: 350),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Overwhisper Settings"
+        window.minSize = NSSize(width: 500, height: 450)
         window.contentView = NSHostingView(rootView: settingsView)
         window.center()
         window.isReleasedWhenClosed = false

@@ -6,6 +6,7 @@ actor WhisperKitEngine: TranscriptionEngine {
     private let appState: AppState
     private let modelManager: ModelManager
     private var isInitialized = false
+    private var currentModel: String?
 
     init(appState: AppState, modelManager: ModelManager) {
         self.appState = appState
@@ -13,50 +14,47 @@ actor WhisperKitEngine: TranscriptionEngine {
     }
 
     func initialize() async {
-        guard !isInitialized else { return }
+        let modelName = await appState.whisperModel.rawValue
+
+        // Skip if already initialized with the same model
+        if isInitialized && currentModel == modelName {
+            return
+        }
+
+        print("Initializing WhisperKit with model: \(modelName)")
 
         do {
-            // Get the model path
-            let modelName = await appState.whisperModel.rawValue
-
-            // Check if model is downloaded
-            let modelPath = try await modelManager.getModelPath(for: modelName)
-
-            if let path = modelPath {
-                // Initialize WhisperKit with the local model
-                whisperKit = try await WhisperKit(
-                    modelFolder: path,
-                    computeOptions: getComputeOptions(),
-                    verbose: false,
-                    logLevel: .none
-                )
-            } else {
-                // Download the model first
-                await MainActor.run {
-                    appState.isDownloadingModel = true
-                }
-
-                whisperKit = try await WhisperKit(
-                    model: modelName,
-                    computeOptions: getComputeOptions(),
-                    verbose: false,
-                    logLevel: .none,
-                    prewarm: true,
-                    load: true,
-                    download: true
-                )
-
-                await MainActor.run {
-                    appState.isDownloadingModel = false
-                    appState.isModelDownloaded = true
-                }
+            await MainActor.run {
+                appState.isDownloadingModel = true
             }
+
+            // Let WhisperKit handle model downloading and loading
+            whisperKit = try await WhisperKit(
+                model: modelName,
+                computeOptions: ModelComputeOptions(
+                    audioEncoderCompute: .cpuAndNeuralEngine,
+                    textDecoderCompute: .cpuAndNeuralEngine
+                ),
+                verbose: true,
+                logLevel: .debug,
+                prewarm: true,
+                load: true,
+                download: true
+            )
 
             isInitialized = true
+            currentModel = modelName
 
             await MainActor.run {
+                appState.isDownloadingModel = false
                 appState.isModelDownloaded = true
+                appState.downloadedModels.insert(modelName)
             }
+
+            // Refresh the model list
+            await modelManager.scanForModels()
+
+            print("WhisperKit initialized successfully")
 
         } catch {
             print("Failed to initialize WhisperKit: \(error)")
@@ -67,22 +65,22 @@ actor WhisperKitEngine: TranscriptionEngine {
         }
     }
 
-    private func getComputeOptions() -> ModelComputeOptions {
-        return ModelComputeOptions(
-            audioEncoderCompute: .cpuAndNeuralEngine,
-            textDecoderCompute: .cpuAndNeuralEngine
-        )
-    }
-
     func transcribe(audioURL: URL) async throws -> String {
+        // Ensure initialized
+        if !isInitialized {
+            await initialize()
+        }
+
         guard let whisperKit = whisperKit else {
             throw WhisperKitError.notInitialized
         }
 
+        print("Transcribing audio from: \(audioURL.path)")
+
         // Get language setting
         let language = await appState.language
         let decodingOptions = DecodingOptions(
-            verbose: false,
+            verbose: true,
             task: .transcribe,
             language: language == "auto" ? nil : language,
             temperature: 0.0,
@@ -102,6 +100,8 @@ actor WhisperKitEngine: TranscriptionEngine {
 
         // Combine all segments into final text
         let text = results.compactMap { $0.text }.joined(separator: " ")
+
+        print("Transcription result: \(text)")
 
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }

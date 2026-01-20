@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject var modelManager: ModelManager
 
     var body: some View {
         TabView {
@@ -11,7 +12,7 @@ struct SettingsView: View {
                 }
                 .environmentObject(appState)
 
-            TranscriptionSettingsView()
+            ModelsSettingsView(modelManager: modelManager)
                 .tabItem {
                     Label("Transcription", systemImage: "waveform")
                 }
@@ -23,7 +24,8 @@ struct SettingsView: View {
                 }
                 .environmentObject(appState)
         }
-        .frame(width: 450, height: 350)
+        .tabViewStyle(.automatic)
+        .frame(minWidth: 500, minHeight: 450)
     }
 }
 
@@ -89,8 +91,13 @@ struct GeneralSettingsView: View {
     }
 }
 
-struct TranscriptionSettingsView: View {
+struct ModelsSettingsView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject var modelManager: ModelManager
+
+    private var isUsingOpenAI: Bool {
+        appState.transcriptionEngine == .openAI
+    }
 
     private let languages = [
         ("auto", "Auto-detect"),
@@ -100,78 +107,207 @@ struct TranscriptionSettingsView: View {
         ("de", "German"),
         ("it", "Italian"),
         ("pt", "Portuguese"),
-        ("nl", "Dutch"),
-        ("pl", "Polish"),
-        ("ru", "Russian"),
-        ("zh", "Chinese"),
-        ("ja", "Japanese"),
         ("ko", "Korean"),
+        ("ja", "Japanese"),
+        ("zh", "Chinese"),
+        ("ru", "Russian"),
         ("ar", "Arabic")
     ]
 
     var body: some View {
-        Form {
-            Section("Engine") {
-                Picker("Engine:", selection: $appState.transcriptionEngine) {
-                    ForEach(TranscriptionEngineType.allCases) { engine in
-                        Text(engine.rawValue).tag(engine)
-                    }
-                }
-            }
-
-            if appState.transcriptionEngine == .whisperKit {
-                Section("WhisperKit Settings") {
-                    Picker("Model:", selection: $appState.whisperModel) {
-                        ForEach(WhisperModel.allCases) { model in
-                            Text(model.displayName).tag(model)
-                        }
-                    }
-
-                    if appState.isDownloadingModel {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                            Text("Downloading model...")
-                                .foregroundColor(.secondary)
-                        }
-                    } else if appState.isModelDownloaded {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Model ready")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    Text("Larger models are more accurate but slower. The '.en' variants are optimized for English only.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Section("Language") {
-                Picker("Language:", selection: $appState.language) {
+        List {
+            // Language Selection
+            Section {
+                Picker("Language", selection: $appState.language) {
                     ForEach(languages, id: \.0) { code, name in
                         Text(name).tag(code)
                     }
                 }
+            } header: {
+                Text("Language")
+            } footer: {
+                Text("Select the language you'll be speaking, or Auto-detect to let the model identify it.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
-            Section("Cloud Fallback") {
-                Toggle("Enable cloud fallback", isOn: $appState.enableCloudFallback)
+            // Cloud API Section
+            Section {
+                HStack {
+                    Image(systemName: isUsingOpenAI ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(isUsingOpenAI ? .accentColor : .primary)
+                        .font(.title3)
 
-                if appState.enableCloudFallback || appState.transcriptionEngine == .openAI {
-                    SecureField("OpenAI API Key:", text: $appState.openAIAPIKey)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("OpenAI Whisper API")
+                                .fontWeight(isUsingOpenAI ? .semibold : .regular)
+                            Image(systemName: "cloud.fill")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                        }
+                        Text("Cloud-based, requires API key")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    if isUsingOpenAI {
+                        Text("Active")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(4)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    appState.transcriptionEngine = .openAI
+                }
+
+                if isUsingOpenAI {
+                    SecureField("API Key", text: $appState.openAIAPIKey)
                         .textFieldStyle(.roundedBorder)
 
-                    Text("Your API key is stored securely in the Keychain")
+                    if appState.openAIAPIKey.isEmpty {
+                        Label("API key required", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
+            } header: {
+                Text("Cloud")
+            } footer: {
+                Text("Audio is sent to OpenAI's servers for transcription.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            // Local Models - English
+            Section {
+                ForEach(WhisperModel.englishModels) { model in
+                    ModelRowView(
+                        model: model,
+                        isDownloaded: appState.downloadedModels.contains(model.rawValue),
+                        isSelected: !isUsingOpenAI && appState.whisperModel == model,
+                        isDownloading: appState.currentlyDownloadingModel == model.rawValue,
+                        downloadProgress: appState.modelDownloadProgress,
+                        modelManager: modelManager
+                    )
+                    .environmentObject(appState)
+                }
+            } header: {
+                Text("On-Device — English")
+            } footer: {
+                Text("Runs locally on your Mac. Optimized for English speech.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            // Local Models - Multilingual
+            Section {
+                ForEach(WhisperModel.multilingualModels) { model in
+                    ModelRowView(
+                        model: model,
+                        isDownloaded: appState.downloadedModels.contains(model.rawValue),
+                        isSelected: !isUsingOpenAI && appState.whisperModel == model,
+                        isDownloading: appState.currentlyDownloadingModel == model.rawValue,
+                        downloadProgress: appState.modelDownloadProgress,
+                        modelManager: modelManager
+                    )
+                    .environmentObject(appState)
+                }
+            } header: {
+                Text("On-Device — Multilingual")
+            } footer: {
+                Text("Runs locally. Supports 99+ languages including Korean, Japanese, Chinese, and more.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .listStyle(.inset(alternatesRowBackgrounds: true))
+    }
+}
+
+struct ModelRowView: View {
+    @EnvironmentObject var appState: AppState
+    let model: WhisperModel
+    let isDownloaded: Bool
+    let isSelected: Bool
+    let isDownloading: Bool
+    let downloadProgress: Double
+    let modelManager: ModelManager
+
+    var body: some View {
+        HStack {
+            // Selection indicator and model info - tappable area
+            HStack {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : (isDownloaded ? "circle" : "circle.dashed"))
+                    .foregroundColor(isSelected ? .accentColor : (isDownloaded ? .primary : .secondary))
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(model.displayName)
+                            .fontWeight(isSelected ? .semibold : .regular)
+
+                        if isDownloaded {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                        }
+                    }
+
+                    Text(model.size)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if isDownloaded && !isSelected {
+                    appState.transcriptionEngine = .whisperKit
+                    appState.whisperModel = model
+                }
+            }
+
+            Spacer()
+
+            if isDownloading {
+                HStack(spacing: 8) {
+                    ProgressView(value: downloadProgress)
+                        .frame(width: 60)
+                    Text("\(Int(downloadProgress * 100))%")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 35)
+                }
+            } else if isDownloaded {
+                if isSelected {
+                    Text("Active")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(4)
+                }
+            } else {
+                Button(action: {
+                    Task {
+                        try? await modelManager.downloadModel(model.rawValue)
+                    }
+                }) {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.bordered)
+                .disabled(appState.isDownloadingModel)
+            }
         }
-        .formStyle(.grouped)
-        .padding()
+        .padding(.vertical, 4)
     }
 }
 
@@ -229,6 +365,7 @@ struct OutputSettingsView: View {
 }
 
 #Preview {
-    SettingsView()
-        .environmentObject(AppState())
+    let appState = AppState()
+    return SettingsView(modelManager: ModelManager(appState: appState))
+        .environmentObject(appState)
 }
