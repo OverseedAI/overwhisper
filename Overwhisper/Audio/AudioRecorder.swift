@@ -115,8 +115,8 @@ class AudioRecorder: ObservableObject {
         let rms = sqrt(sum / Float(frameLength))
         let level = 20 * log10(max(rms, 0.000001))
 
-        // Normalize to 0-1 range (assuming -60dB to 0dB range)
-        let normalizedLevel = max(0, min(1, (level + 60) / 60))
+        // Normalize to 0-1 range (using -40dB to 0dB range for less sensitivity)
+        let normalizedLevel = max(0, min(1, (level + 40) / 40))
 
         DispatchQueue.main.async { [weak self] in
             self?.currentLevel = normalizedLevel

@@ -18,7 +18,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
 
     private var cancellables = Set<AnyCancellable>()
-    private var isInitializingEngine = false
     private var initializationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -116,24 +115,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+
+        // Update UI when engine initialization state changes
+        appState.$isInitializingEngine
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isInitializing in
+                self?.updateInitializingState(isInitializing)
+            }
+            .store(in: &cancellables)
     }
 
     private func updateStatusIcon(for state: RecordingState) {
         guard let button = statusItem.button else { return }
 
+        // Always use nil tint to keep icon white/adaptive to system appearance
+        button.contentTintColor = nil
+
         switch state {
         case .idle:
             button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Idle")
-            button.contentTintColor = nil
         case .recording:
-            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Recording")
-            button.contentTintColor = .systemRed
+            button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Recording")
         case .transcribing:
-            button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Transcribing")
-            button.contentTintColor = .systemOrange
+            button.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Transcribing")
         case .error:
             button.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Error")
-            button.contentTintColor = .systemYellow
         }
     }
 
@@ -153,6 +159,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .error:
             firstItem.title = "Start Recording"
             firstItem.isEnabled = true
+        }
+    }
+
+    private func updateInitializingState(_ isInitializing: Bool) {
+        guard let button = statusItem.button,
+              let menu = statusItem.menu,
+              let firstItem = menu.items.first else { return }
+
+        if isInitializing {
+            button.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "Loading Model")
+            button.contentTintColor = nil
+            firstItem.title = "Loading Model..."
+            firstItem.isEnabled = false
+        } else {
+            // Restore based on current recording state
+            updateStatusIcon(for: appState.recordingState)
+            updateMenu(for: appState.recordingState)
         }
     }
 
@@ -186,12 +209,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         initializationTask?.cancel()
 
         // Prevent concurrent initialization
-        guard !isInitializingEngine else {
+        guard !appState.isInitializingEngine else {
             print("Engine initialization already in progress, skipping")
             return
         }
 
-        isInitializingEngine = true
+        appState.isInitializingEngine = true
         print("Starting engine initialization for: \(appState.transcriptionEngine.rawValue)")
 
         switch appState.transcriptionEngine {
@@ -203,7 +226,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptionEngine = OpenAIEngine(apiKey: appState.openAIAPIKey)
         }
 
-        isInitializingEngine = false
+        appState.isInitializingEngine = false
         print("Engine initialization complete")
     }
 
@@ -238,7 +261,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard appState.recordingState.isIdle else { return }
 
         // Check if engine is still initializing
-        if isInitializingEngine {
+        if appState.isInitializingEngine {
             showNotification(title: "Please Wait", body: "Model is still loading...")
             return
         }
@@ -266,6 +289,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
+            // Mute system audio if enabled
+            if appState.muteSystemAudioWhileRecording {
+                SystemAudioManager.muteSystemAudio()
+            }
+
             try audioRecorder.startRecording()
             appState.recordingState = .recording
             appState.startRecordingTimer()
@@ -297,6 +325,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopAndTranscribe() {
         guard appState.recordingState == .recording else { return }
 
+        // Restore system audio if it was muted
+        if appState.muteSystemAudioWhileRecording {
+            SystemAudioManager.restoreSystemAudio()
+        }
+
         appState.stopRecordingTimer()
         appState.recordingState = .transcribing
         overlayWindow.showTranscribing()
@@ -308,6 +341,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let engine = transcriptionEngine else {
                     throw TranscriptionError.engineNotInitialized
                 }
+
+                // Log which model is being used
+                let modelInfo = appState.transcriptionEngine == .openAI
+                    ? "OpenAI whisper-1"
+                    : "WhisperKit \(appState.whisperModel.rawValue)"
+                appState.addDebugLog("Starting transcription with \(modelInfo)", source: "Transcription")
 
                 let text = try await engine.transcribe(audioURL: audioURL)
 

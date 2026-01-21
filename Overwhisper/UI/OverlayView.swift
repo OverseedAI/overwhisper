@@ -139,11 +139,12 @@ struct AudioWaveformView: View {
 
         withAnimation(.spring(response: 0.15, dampingFraction: 0.7)) {
             for i in 0..<barCount {
-                // Create a smooth wave pattern emanating from center
+                // Gentle bell curve that extends toward the sides
                 let centerDistance = abs(CGFloat(i) - CGFloat(barCount - 1) / 2) / CGFloat(barCount / 2)
-                let wave = 1.0 - (centerDistance * 0.5)
-                let randomFactor = CGFloat.random(in: 0.85...1.15)
-                let newHeight = max(0.08, min(1.0, baseLevel * wave * randomFactor * 1.8))
+                let wave = pow(1.0 - centerDistance, 1.4)
+                // More randomness for organic feel
+                let randomFactor = CGFloat.random(in: 0.7...1.3)
+                let newHeight = max(0.06, min(1.0, baseLevel * wave * randomFactor * 1.5))
                 heights[i] = newHeight
             }
         }

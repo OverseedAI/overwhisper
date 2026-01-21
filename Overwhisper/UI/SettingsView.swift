@@ -241,7 +241,7 @@ struct ModelsSettingsView: View {
                     .foregroundColor(.secondary)
             }
         }
-        .listStyle(.inset(alternatesRowBackgrounds: true))
+        .listStyle(.inset)
     }
 }
 
@@ -317,7 +317,7 @@ struct ModelRowView: View {
                     Label("Download", systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(.bordered)
-                .disabled(appState.isDownloadingModel)
+                .disabled(appState.currentlyDownloadingModel != nil)
             }
         }
         .padding(.vertical, 4)
@@ -329,6 +329,10 @@ struct OutputSettingsView: View {
 
     var body: some View {
         Form {
+            Section("Recording") {
+                Toggle("Mute system audio while recording", isOn: $appState.muteSystemAudioWhileRecording)
+            }
+
             Section("Feedback") {
                 Toggle("Play sound on completion", isOn: $appState.playSoundOnCompletion)
                 Toggle("Show notification on error", isOn: $appState.showNotificationOnError)

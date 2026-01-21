@@ -232,6 +232,9 @@ class AppState: ObservableObject {
     @Published var showNotificationOnError: Bool {
         didSet { UserDefaults.standard.set(showNotificationOnError, forKey: "showNotificationOnError") }
     }
+    @Published var muteSystemAudioWhileRecording: Bool {
+        didSet { UserDefaults.standard.set(muteSystemAudioWhileRecording, forKey: "muteSystemAudioWhileRecording") }
+    }
     @Published var startAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(startAtLogin, forKey: "startAtLogin")
@@ -263,6 +266,7 @@ class AppState: ObservableObject {
     @Published var isModelDownloaded: Bool = false
     @Published var modelDownloadProgress: Double = 0.0
     @Published var isDownloadingModel: Bool = false
+    @Published var isInitializingEngine: Bool = false
     @Published var downloadedModels: Set<String> = []
     @Published var currentlyDownloadingModel: String?
 
@@ -305,6 +309,7 @@ class AppState: ObservableObject {
 
         self.playSoundOnCompletion = UserDefaults.standard.object(forKey: "playSoundOnCompletion") as? Bool ?? true
         self.showNotificationOnError = UserDefaults.standard.object(forKey: "showNotificationOnError") as? Bool ?? true
+        self.muteSystemAudioWhileRecording = UserDefaults.standard.bool(forKey: "muteSystemAudioWhileRecording")
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
 
         // Load toggle hotkey (with migration from legacy hotkeyConfig)
@@ -426,3 +431,36 @@ enum LaunchAtLogin {
 }
 
 import ServiceManagement
+
+// System audio control via AppleScript
+enum SystemAudioManager {
+    private static var wasSystemMuted = false
+
+    static func muteSystemAudio() {
+        // Remember current mute state before muting
+        wasSystemMuted = isSystemMuted()
+        if !wasSystemMuted {
+            setSystemMuted(true)
+        }
+    }
+
+    static func restoreSystemAudio() {
+        // Only unmute if it wasn't muted before we started
+        if !wasSystemMuted {
+            setSystemMuted(false)
+        }
+    }
+
+    private static func isSystemMuted() -> Bool {
+        let script = NSAppleScript(source: "output muted of (get volume settings)")
+        var error: NSDictionary?
+        let result = script?.executeAndReturnError(&error)
+        return result?.booleanValue ?? false
+    }
+
+    private static func setSystemMuted(_ muted: Bool) {
+        let script = NSAppleScript(source: "set volume output muted \(muted)")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
+    }
+}
