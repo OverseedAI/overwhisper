@@ -431,9 +431,8 @@ enum LaunchAtLogin {
 }
 
 import ServiceManagement
-import CoreAudio
 
-// System audio control via CoreAudio
+// System audio control via AppleScript (requires non-sandboxed app)
 enum SystemAudioManager {
     private static var wasSystemMuted = false
 
@@ -450,71 +449,22 @@ enum SystemAudioManager {
         }
     }
 
-    private static func getDefaultOutputDevice() -> AudioDeviceID? {
-        var deviceID = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            &size,
-            &deviceID
-        )
-
-        if status != noErr {
-            print("CoreAudio error getting default output device: \(status)")
-            return nil
-        }
-        return deviceID
-    }
-
     private static func isSystemMuted() -> Bool {
-        guard let deviceID = getDefaultOutputDevice() else { return false }
-
-        var muted: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioDevicePropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muted)
-        if status != noErr {
-            print("CoreAudio error getting mute state: \(status)")
-            return false
+        let script = NSAppleScript(source: "output muted of (get volume settings)")
+        var error: NSDictionary?
+        let result = script?.executeAndReturnError(&error)
+        if let error = error {
+            print("AppleScript error (isSystemMuted): \(error)")
         }
-        return muted != 0
+        return result?.booleanValue ?? false
     }
 
     private static func setSystemMuted(_ muted: Bool) {
-        guard let deviceID = getDefaultOutputDevice() else { return }
-
-        var muteValue: UInt32 = muted ? 1 : 0
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioDevicePropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        let status = AudioObjectSetPropertyData(
-            deviceID,
-            &address,
-            0,
-            nil,
-            UInt32(MemoryLayout<UInt32>.size),
-            &muteValue
-        )
-
-        if status != noErr {
-            print("CoreAudio error setting mute: \(status)")
+        let script = NSAppleScript(source: "set volume output muted \(muted)")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
+        if let error = error {
+            print("AppleScript error (setSystemMuted): \(error)")
         } else {
             print("System audio muted: \(muted)")
         }
