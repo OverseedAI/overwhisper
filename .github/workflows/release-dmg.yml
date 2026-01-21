@@ -236,24 +236,42 @@ jobs:
           DOWNLOAD_URL="https://github.com/OverseedAI/overwhisper/releases/download/v$VERSION/$DMG_PATH"
           PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
 
-          # Create new appcast item
-          NEW_ITEM="    <item>
-              <title>Version $VERSION</title>
-              <pubDate>$PUB_DATE</pubDate>
-              <sparkle:version>${{ github.run_number }}</sparkle:version>
-              <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
-              <enclosure
-                url=\"$DOWNLOAD_URL\"
-                length=\"$DMG_SIZE\"
-                type=\"application/octet-stream\"
-                sparkle:edSignature=\"$SPARKLE_SIGNATURE\"
-              />
-            </item>"
+          # Extract just the signature value from SPARKLE_SIGNATURE
+          # sign_update outputs: sparkle:edSignature="XXX" length="YYY"
+          ED_SIG=$(echo "$SPARKLE_SIGNATURE" | grep -o 'edSignature="[^"]*"' | cut -d'"' -f2)
 
-          # Insert item into appcast.xml (after <language> tag)
-          sed -i '' "/<\/language>/a\\
-          $NEW_ITEM
-          " docs/appcast.xml
+          # Create new appcast item in a temp file
+          cat > /tmp/new_item.xml << ITEMEOF
+    <item>
+      <title>Version $VERSION</title>
+      <pubDate>$PUB_DATE</pubDate>
+      <sparkle:version>${{ github.run_number }}</sparkle:version>
+      <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+      <enclosure
+        url="$DOWNLOAD_URL"
+        length="$DMG_SIZE"
+        type="application/octet-stream"
+        sparkle:edSignature="$ED_SIG"
+      />
+    </item>
+ITEMEOF
+
+          # Use Python to safely insert the item into appcast.xml
+          python3 << 'PYEOF'
+import re
+
+with open('/tmp/new_item.xml', 'r') as f:
+    new_item = f.read()
+
+with open('docs/appcast.xml', 'r') as f:
+    content = f.read()
+
+# Insert after </language> tag
+content = content.replace('</language>', '</language>\n' + new_item)
+
+with open('docs/appcast.xml', 'w') as f:
+    f.write(content)
+PYEOF
 
           cat docs/appcast.xml
 
