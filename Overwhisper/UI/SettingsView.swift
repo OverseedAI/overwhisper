@@ -53,7 +53,8 @@ struct GeneralSettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
-                        HotkeyRecorderView(config: $appState.toggleHotkeyConfig)
+                        HotkeyRecorderView(config: $appState.toggleHotkeyConfig, recorderId: "toggle")
+                            .environmentObject(appState)
                     }
 
                     Divider()
@@ -67,7 +68,8 @@ struct GeneralSettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
-                        HotkeyRecorderView(config: $appState.pushToTalkHotkeyConfig)
+                        HotkeyRecorderView(config: $appState.pushToTalkHotkeyConfig, recorderId: "pushToTalk")
+                            .environmentObject(appState)
                     }
                 }
             }
@@ -329,8 +331,14 @@ struct OutputSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Recording") {
+            Section {
                 Toggle("Mute system audio while recording", isOn: $appState.muteSystemAudioWhileRecording)
+            } header: {
+                Text("Recording")
+            } footer: {
+                Text("Note: This feature only works with built-in speakers. External audio interfaces may not support system volume control.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section("Feedback") {

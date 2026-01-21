@@ -38,6 +38,12 @@ class HotkeyManager {
     func registerToggleHotkey(config: HotkeyConfig) {
         toggleHotKey = nil
 
+        // Skip registration if hotkey is not set
+        guard !config.isEmpty else {
+            print("Toggle hotkey not set, skipping registration")
+            return
+        }
+
         guard let key = Key(carbonKeyCode: UInt32(config.keyCode)) else {
             print("Invalid toggle key code: \(config.keyCode)")
             return
@@ -54,6 +60,12 @@ class HotkeyManager {
 
     func registerPushToTalkHotkey(config: HotkeyConfig) {
         pushToTalkHotKey = nil
+
+        // Skip registration if hotkey is not set
+        guard !config.isEmpty else {
+            print("Push-to-talk hotkey not set, skipping registration")
+            return
+        }
 
         guard let key = Key(carbonKeyCode: UInt32(config.keyCode)) else {
             print("Invalid push-to-talk key code: \(config.keyCode)")
@@ -117,18 +129,24 @@ class HotkeyManager {
 import SwiftUI
 
 struct HotkeyRecorderView: View {
+    @EnvironmentObject var appState: AppState
     @Binding var config: HotkeyConfig
-    @State private var isRecording = false
+    let recorderId: String  // Unique identifier for this recorder
     @State private var localMonitor: Any?
     @State private var globalMonitor: Any?
 
+    private var isRecording: Bool {
+        appState.activeHotkeyRecorder == recorderId
+    }
+
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             Text(isRecording ? "Press a key..." : config.displayString)
                 .frame(minWidth: 100)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(isRecording ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
+                .foregroundColor(config.isEmpty && !isRecording ? .secondary : .primary)
                 .cornerRadius(6)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
@@ -142,11 +160,37 @@ struct HotkeyRecorderView: View {
                     startRecording()
                 }
             }
+            .buttonStyle(.bordered)
+
+            // Clear button - only show if hotkey is set and not recording
+            if !config.isEmpty && !isRecording {
+                Button {
+                    config = .empty
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear hotkey")
+            }
+        }
+        .onDisappear {
+            // Clean up monitors when view disappears
+            if isRecording {
+                stopRecording()
+            }
+        }
+        .onChange(of: appState.activeHotkeyRecorder) { newValue in
+            // If another recorder became active, clean up our monitors
+            if newValue != recorderId {
+                cleanupMonitors()
+            }
         }
     }
 
     private func startRecording() {
-        isRecording = true
+        // Set this recorder as active (will automatically deactivate any other)
+        appState.activeHotkeyRecorder = recorderId
 
         // Monitor for key events
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
@@ -160,8 +204,11 @@ struct HotkeyRecorderView: View {
     }
 
     private func stopRecording() {
-        isRecording = false
+        appState.activeHotkeyRecorder = nil
+        cleanupMonitors()
+    }
 
+    private func cleanupMonitors() {
         if let monitor = localMonitor {
             NSEvent.removeMonitor(monitor)
             localMonitor = nil
@@ -174,6 +221,9 @@ struct HotkeyRecorderView: View {
     }
 
     private func handleKeyEvent(_ event: NSEvent) {
+        // Only handle events if we're the active recorder
+        guard isRecording else { return }
+
         // Ignore modifier-only events unless there's also a key
         if event.type == .flagsChanged {
             return

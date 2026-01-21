@@ -119,10 +119,21 @@ struct HotkeyConfig: Codable, Equatable {
     static let defaultToggle = HotkeyConfig(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey))
     static let defaultPushToTalk = HotkeyConfig(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey | shiftKey))
 
+    // Empty/not set state - keyCode 0xFFFF is unused
+    static let empty = HotkeyConfig(keyCode: 0xFFFF, modifiers: 0)
+
     // Legacy default for migration
     static let `default` = defaultToggle
 
+    var isEmpty: Bool {
+        keyCode == 0xFFFF
+    }
+
     var displayString: String {
+        if isEmpty {
+            return "Not set"
+        }
+
         var parts: [String] = []
         if modifiers & UInt32(controlKey) != 0 { parts.append("⌃") }
         if modifiers & UInt32(optionKey) != 0 { parts.append("⌥") }
@@ -281,6 +292,9 @@ class AppState: ObservableObject {
     @Published var debugLogs: [DebugLogEntry] = []
     private let maxDebugLogs = 100
 
+    // Hotkey recording state - tracks which recorder is active (nil if none)
+    @Published var activeHotkeyRecorder: String?
+
     private var recordingTimer: Timer?
 
     init() {
@@ -433,40 +447,129 @@ enum LaunchAtLogin {
 import ServiceManagement
 
 // System audio control via AppleScript (requires non-sandboxed app)
+// Note: This only works with built-in audio or audio devices that support macOS volume controls.
+// External audio interfaces (like Focusrite Scarlett) may not support mute/volume control.
 enum SystemAudioManager {
     private static var wasSystemMuted = false
+    private static var previousVolume: Int = 0
+    private static var supportChecked = false
+    private static var isSupported = false
 
     static func muteSystemAudio() {
-        wasSystemMuted = isSystemMuted()
-        if !wasSystemMuted {
-            setSystemMuted(true)
+        // Check if volume control is supported
+        guard checkSupport() else {
+            print("[SystemAudioManager] Volume control not supported on current audio device")
+            return
+        }
+
+        // First, check if already muted
+        if let muted = isSystemMuted(), muted {
+            wasSystemMuted = true
+            print("[SystemAudioManager] System already muted")
+            return
+        }
+
+        wasSystemMuted = false
+
+        // Try mute command first
+        if setSystemMuted(true) {
+            print("[SystemAudioManager] Muted using mute command")
+            return
+        }
+
+        // Fallback: set volume to 0
+        if let currentVolume = getSystemVolume() {
+            previousVolume = currentVolume
+            if setSystemVolume(0) {
+                print("[SystemAudioManager] Muted by setting volume to 0 (was \(previousVolume))")
+            }
         }
     }
 
     static func restoreSystemAudio() {
-        if !wasSystemMuted {
-            setSystemMuted(false)
+        guard checkSupport() else {
+            return
+        }
+
+        if wasSystemMuted {
+            print("[SystemAudioManager] System was muted before recording, not restoring")
+            return
+        }
+
+        // Try unmute command first
+        if setSystemMuted(false) {
+            print("[SystemAudioManager] Unmuted using mute command")
+            return
+        }
+
+        // Fallback: restore previous volume
+        if previousVolume > 0 {
+            if setSystemVolume(previousVolume) {
+                print("[SystemAudioManager] Restored volume to \(previousVolume)")
+            }
         }
     }
 
-    private static func isSystemMuted() -> Bool {
+    private static func checkSupport() -> Bool {
+        if supportChecked {
+            return isSupported
+        }
+        supportChecked = true
+
+        // Try to get the current volume - if it returns nil, volume control is not supported
+        if let volume = getSystemVolume() {
+            isSupported = true
+            print("[SystemAudioManager] Volume control supported (current volume: \(volume))")
+        } else {
+            isSupported = false
+            print("[SystemAudioManager] Volume control not supported (external audio interface?)")
+        }
+        return isSupported
+    }
+
+    private static func isSystemMuted() -> Bool? {
         let script = NSAppleScript(source: "output muted of (get volume settings)")
         var error: NSDictionary?
         let result = script?.executeAndReturnError(&error)
-        if let error = error {
-            print("AppleScript error (isSystemMuted): \(error)")
+        if error != nil {
+            return nil
         }
-        return result?.booleanValue ?? false
+        // Check for "missing value" by seeing if we can get a boolean
+        let descriptor = result?.coerce(toDescriptorType: typeBoolean)
+        if descriptor == nil {
+            return nil
+        }
+        return result?.booleanValue
     }
 
-    private static func setSystemMuted(_ muted: Bool) {
+    private static func getSystemVolume() -> Int? {
+        let script = NSAppleScript(source: "output volume of (get volume settings)")
+        var error: NSDictionary?
+        let result = script?.executeAndReturnError(&error)
+        if error != nil {
+            return nil
+        }
+        // Check for "missing value" by trying to coerce to integer
+        let descriptor = result?.coerce(toDescriptorType: typeSInt32)
+        if descriptor == nil {
+            return nil
+        }
+        return Int(result?.int32Value ?? 0)
+    }
+
+    @discardableResult
+    private static func setSystemMuted(_ muted: Bool) -> Bool {
         let script = NSAppleScript(source: "set volume output muted \(muted)")
         var error: NSDictionary?
         script?.executeAndReturnError(&error)
-        if let error = error {
-            print("AppleScript error (setSystemMuted): \(error)")
-        } else {
-            print("System audio muted: \(muted)")
-        }
+        return error == nil
+    }
+
+    @discardableResult
+    private static func setSystemVolume(_ volume: Int) -> Bool {
+        let script = NSAppleScript(source: "set volume output volume \(volume)")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
+        return error == nil
     }
 }
