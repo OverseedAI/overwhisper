@@ -22,6 +22,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
+    private var escapeKeyMonitor: Any?
 
     override init() {
         // Initialize Sparkle updater
@@ -304,10 +305,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 SystemAudioManager.muteSystemAudio()
             }
 
+            // Play sound on start if enabled
+            if appState.playSoundOnStart {
+                NSSound(named: .init("Pop"))?.play()
+            }
+
             try audioRecorder.startRecording()
             appState.recordingState = .recording
             appState.startRecordingTimer()
             overlayWindow.show(position: appState.overlayPosition)
+            startEscapeKeyMonitor()
         } catch {
             appState.recordingState = .error("Failed to start recording: \(error.localizedDescription)")
             appState.lastError = error.localizedDescription
@@ -334,6 +341,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopAndTranscribe() {
         guard appState.recordingState == .recording else { return }
+
+        stopEscapeKeyMonitor()
 
         // Restore system audio if it was muted
         if appState.muteSystemAudioWhileRecording {
@@ -394,6 +403,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func tryCloudFallback() async {
         // Note: Would need to save the audio URL to retry, simplified here
         showNotification(title: "Fallback", body: "Using cloud transcription as fallback")
+    }
+
+    private func cancelRecording() {
+        guard appState.recordingState == .recording else { return }
+
+        stopEscapeKeyMonitor()
+
+        // Restore system audio if it was muted
+        if appState.muteSystemAudioWhileRecording {
+            SystemAudioManager.restoreSystemAudio()
+        }
+
+        appState.stopRecordingTimer()
+        audioRecorder.cancelRecording()
+        appState.recordingState = .idle
+        overlayWindow.hide()
+    }
+
+    private func startEscapeKeyMonitor() {
+        escapeKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // Escape key
+                Task { @MainActor in
+                    self?.cancelRecording()
+                }
+            }
+        }
+    }
+
+    private func stopEscapeKeyMonitor() {
+        if let monitor = escapeKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            escapeKeyMonitor = nil
+        }
     }
 
     private func showNotification(title: String, body: String) {

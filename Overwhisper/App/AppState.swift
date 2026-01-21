@@ -240,6 +240,9 @@ class AppState: ObservableObject {
     @Published var playSoundOnCompletion: Bool {
         didSet { UserDefaults.standard.set(playSoundOnCompletion, forKey: "playSoundOnCompletion") }
     }
+    @Published var playSoundOnStart: Bool {
+        didSet { UserDefaults.standard.set(playSoundOnStart, forKey: "playSoundOnStart") }
+    }
     @Published var showNotificationOnError: Bool {
         didSet { UserDefaults.standard.set(showNotificationOnError, forKey: "showNotificationOnError") }
     }
@@ -322,6 +325,7 @@ class AppState: ObservableObject {
         }
 
         self.playSoundOnCompletion = UserDefaults.standard.object(forKey: "playSoundOnCompletion") as? Bool ?? true
+        self.playSoundOnStart = UserDefaults.standard.bool(forKey: "playSoundOnStart")
         self.showNotificationOnError = UserDefaults.standard.object(forKey: "showNotificationOnError") as? Bool ?? true
         self.muteSystemAudioWhileRecording = UserDefaults.standard.bool(forKey: "muteSystemAudioWhileRecording")
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")

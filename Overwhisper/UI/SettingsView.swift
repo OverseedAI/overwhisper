@@ -342,6 +342,7 @@ struct OutputSettingsView: View {
             }
 
             Section("Feedback") {
+                Toggle("Play sound when recording starts", isOn: $appState.playSoundOnStart)
                 Toggle("Play sound on completion", isOn: $appState.playSoundOnCompletion)
                 Toggle("Show notification on error", isOn: $appState.showNotificationOnError)
             }
