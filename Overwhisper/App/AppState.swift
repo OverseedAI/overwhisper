@@ -455,6 +455,9 @@ enum SystemAudioManager {
         let script = NSAppleScript(source: "output muted of (get volume settings)")
         var error: NSDictionary?
         let result = script?.executeAndReturnError(&error)
+        if let error = error {
+            print("AppleScript error (isSystemMuted): \(error)")
+        }
         return result?.booleanValue ?? false
     }
 
@@ -462,5 +465,10 @@ enum SystemAudioManager {
         let script = NSAppleScript(source: "set volume output muted \(muted)")
         var error: NSDictionary?
         script?.executeAndReturnError(&error)
+        if let error = error {
+            print("AppleScript error (setSystemMuted): \(error)")
+        } else {
+            print("System audio muted: \(muted)")
+        }
     }
 }
