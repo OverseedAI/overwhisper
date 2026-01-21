@@ -100,11 +100,26 @@ jobs:
         run: |
           ditto -c -k --keepParent "$RUNNER_TEMP/Export/$PRODUCT_NAME.app" "$RUNNER_TEMP/$PRODUCT_NAME.zip"
 
-          xcrun notarytool submit "$RUNNER_TEMP/$PRODUCT_NAME.zip" \
+          # Submit and capture submission ID
+          SUBMIT_OUTPUT=$(xcrun notarytool submit "$RUNNER_TEMP/$PRODUCT_NAME.zip" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_ID_PASSWORD }}" \
             --team-id "${{ secrets.APPLE_TEAM_ID }}" \
-            --wait
+            --wait 2>&1) || true
+
+          echo "$SUBMIT_OUTPUT"
+
+          # Extract submission ID and check status
+          SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
+
+          if echo "$SUBMIT_OUTPUT" | grep -q "status: Invalid"; then
+            echo "Notarization failed. Fetching log..."
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "${{ secrets.APPLE_ID }}" \
+              --password "${{ secrets.APPLE_ID_PASSWORD }}" \
+              --team-id "${{ secrets.APPLE_TEAM_ID }}"
+            exit 1
+          fi
 
           xcrun stapler staple "$RUNNER_TEMP/Export/$PRODUCT_NAME.app"
 
