@@ -73,29 +73,36 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             ENABLE_HARDENED_RUNTIME=YES
 
-      - name: Export Archive
+      - name: Export Archive (unsigned)
         run: |
-          cat > $RUNNER_TEMP/ExportOptions.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>developer-id</string>
-              <key>teamID</key>
-              <string>${{ secrets.APPLE_TEAM_ID }}</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>signingCertificate</key>
-              <string>Developer ID Application</string>
-          </dict>
-          </plist>
-          EOF
+          # Copy the app from archive without using xcodebuild export
+          # This avoids signing issues with SPM dependencies
+          mkdir -p $RUNNER_TEMP/Export
+          cp -R "$RUNNER_TEMP/Overwhisper.xcarchive/Products/Applications/$PRODUCT_NAME.app" "$RUNNER_TEMP/Export/"
 
-          xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/Overwhisper.xcarchive \
-            -exportPath $RUNNER_TEMP/Export \
-            -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist
+      - name: Sign with Hardened Runtime
+        run: |
+          APP_PATH="$RUNNER_TEMP/Export/$PRODUCT_NAME.app"
+          IDENTITY="Developer ID Application"
+          ENTITLEMENTS="Overwhisper/Overwhisper.entitlements"
+
+          # Find and sign all frameworks and dylibs first (inside out signing)
+          find "$APP_PATH" -type f -name "*.dylib" -o -name "*.framework" | while read -r item; do
+            codesign --force --options runtime --sign "$IDENTITY" "$item" 2>/dev/null || true
+          done
+
+          # Sign all executables in Frameworks
+          if [ -d "$APP_PATH/Contents/Frameworks" ]; then
+            find "$APP_PATH/Contents/Frameworks" -type f -perm +111 | while read -r item; do
+              codesign --force --options runtime --sign "$IDENTITY" "$item" 2>/dev/null || true
+            done
+          fi
+
+          # Sign the main executable with entitlements and hardened runtime
+          codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP_PATH"
+
+          # Verify the signature
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
       - name: Notarize App
         run: |
