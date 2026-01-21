@@ -68,8 +68,9 @@ jobs:
             -destination "generic/platform=macOS" \
             -archivePath $RUNNER_TEMP/Overwhisper.xcarchive \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
-            CODE_SIGN_STYLE=Automatic
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Export Archive
         run: |
@@ -83,7 +84,9 @@ jobs:
               <key>teamID</key>
               <string>${{ secrets.APPLE_TEAM_ID }}</string>
               <key>signingStyle</key>
-              <string>automatic</string>
+              <string>manual</string>
+              <key>signingCertificate</key>
+              <string>Developer ID Application</string>
           </dict>
           </plist>
           EOF
