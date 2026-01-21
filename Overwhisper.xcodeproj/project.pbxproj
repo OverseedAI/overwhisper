@@ -10,6 +10,7 @@
 		2D6A6332D3D90900C616BBF3 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F70BDECC4296C7ABE1FDA0 /* HotkeyManager.swift */; };
 		3C20ABADE932477FE5057996 /* TextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AACBA6521305AC62E4D5F08 /* TextInserter.swift */; };
 		45DEEB1F5F15330C4CBBF295 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0EF1327337992F9B5CA01B /* AudioRecorder.swift */; };
+		70FA1EA74756D7D320D285E1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = FCE79557B30B53B7AB17AE32 /* Sparkle */; };
 		7D180EF2BEA910E301CCFF11 /* OverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F33FBAA55580AA9161076B3F /* OverlayView.swift */; };
 		8A57D64071EE9382870A168A /* HotKey in Frameworks */ = {isa = PBXBuildFile; productRef = 9A4FF0B4B24B9C3208107118 /* HotKey */; };
 		A29C2673D8311037884AC6DD /* OverwhisperApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2AB0D6F62E0EBA98666314F /* OverwhisperApp.swift */; };
@@ -50,6 +51,7 @@
 			files = (
 				B73CD4C608E49C7EF1D8E304 /* WhisperKit in Frameworks */,
 				8A57D64071EE9382870A168A /* HotKey in Frameworks */,
+				70FA1EA74756D7D320D285E1 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -176,6 +178,7 @@
 			packageProductDependencies = (
 				761523080B992A3D3E66DE0D /* WhisperKit */,
 				9A4FF0B4B24B9C3208107118 /* HotKey */,
+				FCE79557B30B53B7AB17AE32 /* Sparkle */,
 			);
 			productName = Overwhisper;
 			productReference = 82812CE441C897C9A14857B0 /* Overwhisper.app */;
@@ -207,6 +210,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				681EAAEEFA2C695A3644ED8D /* XCRemoteSwiftPackageReference "HotKey" */,
+				A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				8EC2D1C4B288D69480479AFB /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -447,6 +451,14 @@
 				minimumVersion = 0.9.0;
 			};
 		};
+		A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -459,6 +471,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 681EAAEEFA2C695A3644ED8D /* XCRemoteSwiftPackageReference "HotKey" */;
 			productName = HotKey;
+		};
+		FCE79557B30B53B7AB17AE32 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

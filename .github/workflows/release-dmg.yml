@@ -155,11 +155,66 @@ jobs:
           xcrun stapler staple "$RUNNER_TEMP/$PRODUCT_NAME-$VERSION.dmg"
           mv "$RUNNER_TEMP/$PRODUCT_NAME-$VERSION.dmg" .
 
+      - name: Sign DMG for Sparkle
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          DMG_PATH="$PRODUCT_NAME-$VERSION.dmg"
+
+          # Get Sparkle tools from resolved packages
+          SPARKLE_BIN=$(find ~/Library/Developer/Xcode/DerivedData -path "*/SourcePackages/artifacts/sparkle/Sparkle/bin" -type d | head -1)
+
+          if [ -z "$SPARKLE_BIN" ]; then
+            echo "Sparkle tools not found, skipping signature"
+            exit 0
+          fi
+
+          # Sign the DMG and get the signature
+          echo "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_key
+          SIGNATURE=$("$SPARKLE_BIN/sign_update" "$DMG_PATH" -f /tmp/sparkle_key)
+          rm /tmp/sparkle_key
+
+          echo "SPARKLE_SIGNATURE=$SIGNATURE" >> $GITHUB_ENV
+          echo "Sparkle signature: $SIGNATURE"
+
+      - name: Generate Appcast Entry
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          DMG_PATH="$PRODUCT_NAME-$VERSION.dmg"
+          DMG_SIZE=$(stat -f%z "$DMG_PATH")
+          DOWNLOAD_URL="https://github.com/OverseedAI/overwhisper/releases/download/v$VERSION/$DMG_PATH"
+          PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
+
+          # Create appcast item
+          cat > appcast_item.xml << EOF
+          <item>
+            <title>Version $VERSION</title>
+            <pubDate>$PUB_DATE</pubDate>
+            <sparkle:version>${{ github.run_number }}</sparkle:version>
+            <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+            <enclosure
+              url="$DOWNLOAD_URL"
+              length="$DMG_SIZE"
+              type="application/octet-stream"
+              sparkle:edSignature="$SPARKLE_SIGNATURE"
+            />
+          </item>
+          EOF
+
+          cat appcast_item.xml
+
       - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Overwhisper-${{ steps.version.outputs.version }}.dmg
           path: "*.dmg"
+
+      - name: Upload Appcast Item
+        uses: actions/upload-artifact@v4
+        with:
+          name: appcast-item-${{ steps.version.outputs.version }}
+          path: appcast_item.xml
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -171,3 +226,42 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Appcast
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          DMG_PATH="$PRODUCT_NAME-$VERSION.dmg"
+          DMG_SIZE=$(stat -f%z "$DMG_PATH")
+          DOWNLOAD_URL="https://github.com/OverseedAI/overwhisper/releases/download/v$VERSION/$DMG_PATH"
+          PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
+
+          # Create new appcast item
+          NEW_ITEM="    <item>
+              <title>Version $VERSION</title>
+              <pubDate>$PUB_DATE</pubDate>
+              <sparkle:version>${{ github.run_number }}</sparkle:version>
+              <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+              <enclosure
+                url=\"$DOWNLOAD_URL\"
+                length=\"$DMG_SIZE\"
+                type=\"application/octet-stream\"
+                sparkle:edSignature=\"$SPARKLE_SIGNATURE\"
+              />
+            </item>"
+
+          # Insert item into appcast.xml (after <language> tag)
+          sed -i '' "/<\/language>/a\\
+          $NEW_ITEM
+          " docs/appcast.xml
+
+          cat docs/appcast.xml
+
+      - name: Commit Appcast Update
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/appcast.xml
+          git commit -m "Update appcast for v${{ steps.version.outputs.version }}"
+          git push origin HEAD:main

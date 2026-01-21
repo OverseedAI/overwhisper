@@ -24,6 +24,9 @@ packages:
   HotKey:
     url: https://github.com/soffes/HotKey.git
     from: "0.2.0"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    from: "2.6.0"
 
 targets:
   Overwhisper:
@@ -49,6 +52,7 @@ targets:
     dependencies:
       - package: WhisperKit
       - package: HotKey
+      - package: Sparkle
     info:
       path: Overwhisper/Info.plist
     entitlements:

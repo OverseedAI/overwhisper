@@ -34,5 +34,11 @@
     <string>Overwhisper needs to control system audio to mute sounds while recording.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>SUFeedURL</key>
+    <string>https://overseedai.github.io/overwhisper/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>TVbKW7Eho/pA8YdxeGAkauxjL+AsgcE4k9fzhTXVqhA=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
 </dict>
 </plist>

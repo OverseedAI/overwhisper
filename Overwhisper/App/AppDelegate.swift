@@ -3,11 +3,14 @@ import SwiftUI
 import AVFoundation
 import Combine
 import UserNotifications
+import Sparkle
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var appState = AppState()
+
+    private let updaterController: SPUStandardUpdaterController
 
     private var hotkeyManager: HotkeyManager!
     private var audioRecorder: AudioRecorder!
@@ -19,6 +22,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
+
+    override init() {
+        // Initialize Sparkle updater
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon - menu bar only
@@ -48,6 +57,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Start Recording", action: #selector(toggleRecording), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Overwhisper", action: #selector(quitApp), keyEquivalent: "q"))
@@ -437,6 +447,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.settingsWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func checkForUpdates() {
+        updaterController.checkForUpdates(nil)
     }
 
     @objc private func quitApp() {
