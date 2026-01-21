@@ -28,8 +28,7 @@ jobs:
           xcode-version: latest-stable
 
       - name: Install Dependencies
-        run: |
-          brew install create-dmg
+        run: brew install create-dmg
 
       - name: Import Code Signing Certificate
         env:
@@ -37,18 +36,14 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}
         run: |
-          # Create temporary keychain
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
-          # Import certificate
           echo "$CERTIFICATE_BASE64" | base64 --decode > $RUNNER_TEMP/certificate.p12
           security import $RUNNER_TEMP/certificate.p12 -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
-
-          # Allow codesign to access keychain
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
       - name: Determine Version
@@ -60,66 +55,54 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Update Version in Project
+      - name: Update Version
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Overwhisper/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" Overwhisper/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Overwhisper/Info.plist
 
-      - name: Build for Release
+      - name: Build and Archive
         run: |
-          xcodebuild -project Overwhisper.xcodeproj \
+          xcodebuild archive \
+            -project Overwhisper.xcodeproj \
             -scheme $SCHEME \
-            -configuration Release \
-            -derivedDataPath $RUNNER_TEMP/DerivedData \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+            -destination "generic/platform=macOS" \
+            -archivePath $RUNNER_TEMP/Overwhisper.xcarchive \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            CODE_SIGN_STYLE=Automatic
 
-      - name: Sign Application
-        env:
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Export Archive
         run: |
-          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release/Overwhisper.app"
+          cat > $RUNNER_TEMP/ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>developer-id</string>
+              <key>teamID</key>
+              <string>${{ secrets.APPLE_TEAM_ID }}</string>
+              <key>signingStyle</key>
+              <string>automatic</string>
+          </dict>
+          </plist>
+          EOF
 
-          # Sign all frameworks and dylibs first
-          find "$APP_PATH" -name "*.framework" -o -name "*.dylib" | while read -r item; do
-            codesign --force --options runtime --timestamp \
-              --sign "Developer ID Application" \
-              "$item" || true
-          done
-
-          # Sign the main app
-          codesign --force --deep --options runtime --timestamp \
-            --entitlements Overwhisper/Overwhisper.entitlements \
-            --sign "Developer ID Application" \
-            "$APP_PATH"
-
-          # Verify
-          codesign --verify --verbose "$APP_PATH"
-
-          # Move to Export folder
-          mkdir -p $RUNNER_TEMP/Export
-          cp -R "$APP_PATH" $RUNNER_TEMP/Export/
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Overwhisper.xcarchive \
+            -exportPath $RUNNER_TEMP/Export \
+            -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist
 
       - name: Notarize App
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # Create ZIP for notarization
           ditto -c -k --keepParent "$RUNNER_TEMP/Export/$PRODUCT_NAME.app" "$RUNNER_TEMP/$PRODUCT_NAME.zip"
 
-          # Submit for notarization
           xcrun notarytool submit "$RUNNER_TEMP/$PRODUCT_NAME.zip" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_ID_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_ID_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
             --wait
 
-          # Staple the notarization ticket
           xcrun stapler staple "$RUNNER_TEMP/Export/$PRODUCT_NAME.app"
 
       - name: Create DMG
@@ -128,7 +111,6 @@ jobs:
 
           create-dmg \
             --volname "$PRODUCT_NAME" \
-            --volicon "Overwhisper/Resources/AppIcon.icns" \
             --window-pos 200 120 \
             --window-size 600 400 \
             --icon-size 100 \
@@ -138,7 +120,6 @@ jobs:
             "$RUNNER_TEMP/$PRODUCT_NAME-$VERSION.dmg" \
             "$RUNNER_TEMP/Export/$PRODUCT_NAME.app" || true
 
-          # Notarize DMG
           xcrun notarytool submit "$RUNNER_TEMP/$PRODUCT_NAME-$VERSION.dmg" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_ID_PASSWORD }}" \
@@ -146,8 +127,6 @@ jobs:
             --wait
 
           xcrun stapler staple "$RUNNER_TEMP/$PRODUCT_NAME-$VERSION.dmg"
-
-          # Move to workspace for upload
           mv "$RUNNER_TEMP/$PRODUCT_NAME-$VERSION.dmg" .
 
       - name: Upload DMG Artifact
