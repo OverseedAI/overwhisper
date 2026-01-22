@@ -68,46 +68,57 @@ enum TranscriptionEngineType: String, CaseIterable, Identifiable {
 
 enum WhisperModel: String, CaseIterable, Identifiable {
     // English-only models (faster, more accurate for English)
+    case tinyEn = "tiny.en"
+    case baseEn = "base.en"
     case smallEn = "small.en"
     case mediumEn = "medium.en"
     // Multilingual models (supports 99+ languages including Korean, Japanese, Chinese, etc.)
+    case tiny = "tiny"
+    case base = "base"
     case small = "small"
     case medium = "medium"
-    case large = "large-v3_turbo"
+    case largeV2 = "large-v2"
+    case largeV3 = "large-v3"
+    case largeV3Turbo = "large-v3_turbo"
 
     var id: String { rawValue }
 
     var isEnglishOnly: Bool {
         switch self {
-        case .smallEn, .mediumEn: return true
-        case .small, .medium, .large: return false
+        case .tinyEn, .baseEn, .smallEn, .mediumEn: return true
+        case .tiny, .base, .small, .medium, .largeV2, .largeV3, .largeV3Turbo: return false
         }
     }
 
     var displayName: String {
         switch self {
-        case .smallEn: return "Small"
-        case .mediumEn: return "Medium"
-        case .small: return "Small"
-        case .medium: return "Medium"
-        case .large: return "Large"
+        case .tinyEn, .tiny: return "Tiny"
+        case .baseEn, .base: return "Base"
+        case .smallEn, .small: return "Small"
+        case .mediumEn, .medium: return "Medium"
+        case .largeV2: return "Large v2"
+        case .largeV3: return "Large v3"
+        case .largeV3Turbo: return "Large v3 Turbo"
         }
     }
 
     var size: String {
         switch self {
+        case .tinyEn, .tiny: return "~75 MB"
+        case .baseEn, .base: return "~150 MB"
         case .smallEn, .small: return "~500 MB"
         case .mediumEn, .medium: return "~1.5 GB"
-        case .large: return "~1.6 GB"
+        case .largeV2, .largeV3: return "~3 GB"
+        case .largeV3Turbo: return "~1.6 GB"
         }
     }
 
     static var englishModels: [WhisperModel] {
-        [.smallEn, .mediumEn]
+        [.tinyEn, .baseEn, .smallEn, .mediumEn]
     }
 
     static var multilingualModels: [WhisperModel] {
-        [.small, .medium, .large]
+        [.tiny, .base, .small, .medium, .largeV2, .largeV3, .largeV3Turbo]
     }
 }
 

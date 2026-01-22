@@ -316,7 +316,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Play sound on start if enabled
             if appState.playSoundOnStart {
-                NSSound(named: .init("Pop"))?.play()
+                NSSound(named: .init("Blow"))?.play()
             }
 
             try audioRecorder.startRecording()

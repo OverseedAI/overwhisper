@@ -97,7 +97,7 @@ class ModelManager: ObservableObject {
     }
 
     private func extractBaseModelName(_ rawName: String) -> String {
-        // Handle versioned names like "large-v3-v20240930" -> "large-v3-turbo" or "large-v3"
+        // Handle versioned names like "large-v3-v20240930" -> "large-v3" or "large-v3_turbo"
         // and simple names like "small.en" -> "small.en"
 
         // Check if it matches our known model names directly
@@ -107,11 +107,14 @@ class ModelManager: ObservableObject {
             }
         }
 
-        // Try to match base name patterns
+        // Try to match base name patterns (order matters - more specific first)
         let patterns = [
             ("large-v3_turbo", "large-v3_turbo"),
-            ("large-v3-turbo", "large-v3_turbo"),  // Handle old naming
-            ("large-v3", "large-v3_turbo"),  // Map large-v3 to our large-v3_turbo
+            ("large-v3-turbo", "large-v3_turbo"),
+            ("large-v3", "large-v3"),
+            ("large-v2_turbo", "large-v2"),
+            ("large-v2-turbo", "large-v2"),
+            ("large-v2", "large-v2"),
             ("medium.en", "medium.en"),
             ("medium", "medium"),
             ("small.en", "small.en"),
@@ -175,12 +178,45 @@ class ModelManager: ObservableObject {
     }
 
     func deleteModel(_ modelName: String) throws {
-        let modelPath = modelsDirectory.appendingPathComponent(modelName)
-        try FileManager.default.removeItem(at: modelPath)
-        downloadedModels.remove(modelName)
+        let fileManager = FileManager.default
+        var deleted = false
 
-        if modelName == appState.whisperModel.rawValue {
-            appState.isModelDownloaded = false
+        // Check all possible locations where the model might be stored
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let homeDir = fileManager.homeDirectoryForCurrentUser
+
+        let possiblePaths = [
+            modelsDirectory.appendingPathComponent(modelName),
+            modelsDirectory.appendingPathComponent("openai_whisper-\(modelName)"),
+            appSupport.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-\(modelName)"),
+            homeDir.appendingPathComponent(".cache/huggingface/hub/models--argmaxinc--whisperkit-coreml/snapshots")
+        ]
+
+        for path in possiblePaths {
+            if path.lastPathComponent == "snapshots" {
+                // Search in huggingface cache snapshots
+                if let snapshots = try? fileManager.contentsOfDirectory(at: path, includingPropertiesForKeys: nil) {
+                    for snapshot in snapshots where snapshot.hasDirectoryPath {
+                        let modelDir = snapshot.appendingPathComponent("openai_whisper-\(modelName)")
+                        if fileManager.fileExists(atPath: modelDir.path) {
+                            try fileManager.removeItem(at: modelDir)
+                            deleted = true
+                        }
+                    }
+                }
+            } else if fileManager.fileExists(atPath: path.path) {
+                try fileManager.removeItem(at: path)
+                deleted = true
+            }
+        }
+
+        if deleted {
+            downloadedModels.remove(modelName)
+            appState.downloadedModels.remove(modelName)
+
+            if modelName == appState.whisperModel.rawValue {
+                appState.isModelDownloaded = false
+            }
         }
     }
 

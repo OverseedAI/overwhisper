@@ -301,14 +301,25 @@ struct ModelRowView: View {
                         .frame(width: 35)
                 }
             } else if isDownloaded {
-                if isSelected {
-                    Text("Active")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.green.opacity(0.1))
-                        .cornerRadius(4)
+                HStack(spacing: 8) {
+                    if isSelected {
+                        Text("Active")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(4)
+                    }
+
+                    Button(action: {
+                        try? modelManager.deleteModel(model.rawValue)
+                    }) {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Delete model")
                 }
             } else {
                 Button(action: {
