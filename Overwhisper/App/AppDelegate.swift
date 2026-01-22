@@ -162,34 +162,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateMenu(for state: RecordingState) {
-        guard let menu = statusItem.menu, let firstItem = menu.items.first else { return }
+        guard let menu = statusItem.menu, menu.items.count > 2 else { return }
+        let recordingItem = menu.items[2] // After version item and separator
 
         switch state {
         case .idle:
-            firstItem.title = "Start Recording"
-            firstItem.isEnabled = true
+            recordingItem.title = "Start Recording"
+            recordingItem.isEnabled = true
         case .recording:
-            firstItem.title = "Stop Recording"
-            firstItem.isEnabled = true
+            recordingItem.title = "Stop Recording"
+            recordingItem.isEnabled = true
         case .transcribing:
-            firstItem.title = "Transcribing..."
-            firstItem.isEnabled = false
+            recordingItem.title = "Transcribing..."
+            recordingItem.isEnabled = false
         case .error:
-            firstItem.title = "Start Recording"
-            firstItem.isEnabled = true
+            recordingItem.title = "Start Recording"
+            recordingItem.isEnabled = true
         }
     }
 
     private func updateInitializingState(_ isInitializing: Bool) {
         guard let button = statusItem.button,
               let menu = statusItem.menu,
-              let firstItem = menu.items.first else { return }
+              menu.items.count > 2 else { return }
+        let recordingItem = menu.items[2] // After version item and separator
 
         if isInitializing {
             button.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "Loading Model")
             button.contentTintColor = nil
-            firstItem.title = "Loading Model..."
-            firstItem.isEnabled = false
+            recordingItem.title = "Loading Model..."
+            recordingItem.isEnabled = false
         } else {
             // Restore based on current recording state
             updateStatusIcon(for: appState.recordingState)
