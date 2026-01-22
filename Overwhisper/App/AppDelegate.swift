@@ -311,7 +311,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             // Play sound on start if enabled (before muting)
             if appState.playSoundOnStart {
-                NSSound(named: .init("Blow"))?.play()
+                NSSound(named: .init("Glass"))?.play()
             }
 
             // Mute system audio if enabled
