@@ -86,19 +86,37 @@ jobs:
           IDENTITY="Developer ID Application"
           ENTITLEMENTS="Overwhisper/Overwhisper.entitlements"
 
-          # Find and sign all frameworks and dylibs first (inside out signing)
-          find "$APP_PATH" -type f -name "*.dylib" -o -name "*.framework" | while read -r item; do
-            codesign --force --options runtime --sign "$IDENTITY" "$item" 2>/dev/null || true
-          done
+          # Sign Sparkle XPC services first (deepest components)
+          if [ -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ]; then
+            SPARKLE_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
 
-          # Sign all executables in Frameworks
-          if [ -d "$APP_PATH/Contents/Frameworks" ]; then
-            find "$APP_PATH/Contents/Frameworks" -type f -perm +111 | while read -r item; do
-              codesign --force --options runtime --sign "$IDENTITY" "$item" 2>/dev/null || true
+            # Sign XPC services
+            find "$SPARKLE_PATH" -name "*.xpc" -type d | while read -r xpc; do
+              codesign --force --options runtime --sign "$IDENTITY" "$xpc"
             done
+
+            # Sign Autoupdate and Updater.app
+            if [ -f "$SPARKLE_PATH/Versions/B/Autoupdate" ]; then
+              codesign --force --options runtime --sign "$IDENTITY" "$SPARKLE_PATH/Versions/B/Autoupdate"
+            fi
+            if [ -d "$SPARKLE_PATH/Versions/B/Updater.app" ]; then
+              codesign --force --options runtime --sign "$IDENTITY" "$SPARKLE_PATH/Versions/B/Updater.app"
+            fi
+
+            # Sign the framework itself
+            codesign --force --options runtime --sign "$IDENTITY" "$SPARKLE_PATH"
           fi
 
-          # Sign the main executable with entitlements and hardened runtime
+          # Sign other frameworks and dylibs
+          find "$APP_PATH/Contents/Frameworks" -name "*.framework" -not -name "Sparkle.framework" -type d | while read -r fw; do
+            codesign --force --options runtime --sign "$IDENTITY" "$fw"
+          done
+
+          find "$APP_PATH" -name "*.dylib" -type f | while read -r lib; do
+            codesign --force --options runtime --sign "$IDENTITY" "$lib" 2>/dev/null || true
+          done
+
+          # Sign the main app with entitlements and hardened runtime
           codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP_PATH"
 
           # Verify the signature
