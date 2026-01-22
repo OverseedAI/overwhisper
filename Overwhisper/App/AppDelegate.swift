@@ -309,14 +309,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
+            // Play sound on start if enabled (before muting)
+            if appState.playSoundOnStart {
+                NSSound(named: .init("Blow"))?.play()
+            }
+
             // Mute system audio if enabled
             if appState.muteSystemAudioWhileRecording {
                 SystemAudioManager.muteSystemAudio()
-            }
-
-            // Play sound on start if enabled
-            if appState.playSoundOnStart {
-                NSSound(named: .init("Blow"))?.play()
             }
 
             try audioRecorder.startRecording()
