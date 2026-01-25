@@ -177,6 +177,24 @@ class AudioRecorder: ObservableObject {
         currentLevel = 0
         recordingURL = nil
     }
+
+    /// Resets the audio engine after system wake or audio route changes.
+    /// This ensures the engine is ready for the next recording session.
+    func resetAudioEngine() {
+        // Stop engine if running (shouldn't be after wake, but be safe)
+        if audioEngine.isRunning {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+        }
+
+        // Reset the audio engine to clear any stale state
+        audioEngine.reset()
+
+        isRecording = false
+        currentLevel = 0
+        audioFile = nil
+        recordingURL = nil
+    }
 }
 
 enum AudioRecorderError: LocalizedError {

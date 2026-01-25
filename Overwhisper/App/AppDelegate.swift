@@ -37,6 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupComponents()
         setupBindings()
+        setupSleepWakeHandling()
 
         // Request microphone permission
         requestMicrophonePermission()
@@ -45,6 +46,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await initializeTranscriptionEngine()
         }
+    }
+
+    private func setupSleepWakeHandling() {
+        let workspace = NSWorkspace.shared.notificationCenter
+
+        workspace.addObserver(
+            self,
+            selector: #selector(handleSystemWillSleep),
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+
+        workspace.addObserver(
+            self,
+            selector: #selector(handleSystemDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleSystemWillSleep(_ notification: Notification) {
+        // Cancel any active recording before sleep
+        if appState.recordingState == .recording {
+            cancelRecording()
+        }
+    }
+
+    @objc private func handleSystemDidWake(_ notification: Notification) {
+        // Reset the audio engine to ensure it's ready after wake
+        audioRecorder.resetAudioEngine()
     }
 
     private func setupStatusItem() {
