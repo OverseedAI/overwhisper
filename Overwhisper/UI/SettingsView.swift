@@ -339,10 +339,22 @@ struct ModelRowView: View {
 
 struct OutputSettingsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var audioDeviceManager: AudioDeviceManager
 
     var body: some View {
         Form {
             Section {
+                Picker("Microphone", selection: $appState.selectedInputDeviceUID) {
+                    let defaultName = audioDeviceManager.defaultInputDeviceName
+                    let defaultLabel = defaultName.map { "System Default (\($0))" } ?? "System Default"
+                    Text(defaultLabel).tag("")
+
+                    ForEach(audioDeviceManager.inputDevices) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                }
+                .pickerStyle(.menu)
+
                 Toggle("Mute system audio while recording", isOn: $appState.muteSystemAudioWhileRecording)
             } header: {
                 Text("Recording")
@@ -567,4 +579,5 @@ struct DebugLogRow: View {
     let appState = AppState()
     return SettingsView(modelManager: ModelManager(appState: appState))
         .environmentObject(appState)
+        .environmentObject(AudioDeviceManager())
 }

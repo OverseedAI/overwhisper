@@ -14,11 +14,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var hotkeyManager: HotkeyManager!
     private var audioRecorder: AudioRecorder!
+    private var audioDeviceManager: AudioDeviceManager!
     private var overlayWindow: OverlayWindow!
     private var textInserter: TextInserter!
     private var transcriptionEngine: (any TranscriptionEngine)?
     private var modelManager: ModelManager!
     private var settingsWindow: NSWindow?
+    private var recordingMenuItem: NSMenuItem?
+    private var errorSeparatorItem: NSMenuItem?
+    private var errorMenuItem: NSMenuItem?
 
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
@@ -98,7 +102,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(versionItem)
         menu.addItem(NSMenuItem.separator())
 
-        menu.addItem(NSMenuItem(title: "Start Recording", action: #selector(toggleRecording), keyEquivalent: ""))
+        let recordingItem = NSMenuItem(title: "Start Recording", action: #selector(toggleRecording), keyEquivalent: "")
+        menu.addItem(recordingItem)
+        self.recordingMenuItem = recordingItem
+
+        let errorSeparator = NSMenuItem.separator()
+        errorSeparator.isHidden = true
+        menu.addItem(errorSeparator)
+        self.errorSeparatorItem = errorSeparator
+
+        let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        errorItem.isEnabled = false
+        errorItem.isHidden = true
+        menu.addItem(errorItem)
+        self.errorMenuItem = errorItem
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
@@ -110,6 +128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupComponents() {
         audioRecorder = AudioRecorder()
+        audioDeviceManager = AudioDeviceManager()
         overlayWindow = OverlayWindow(appState: appState)
         textInserter = TextInserter()
         modelManager = ModelManager(appState: appState)
@@ -118,6 +137,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.handleHotkeyEvent(event, mode: mode)
             }
         }
+
+        let initialUID = appState.selectedInputDeviceUID
+        let initialDevice = initialUID.isEmpty ? nil : audioDeviceManager.device(forUID: initialUID)
+        audioRecorder.setInputDevice(initialDevice)
     }
 
     private func setupBindings() {
@@ -134,6 +157,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         audioRecorder.$currentLevel
             .receive(on: DispatchQueue.main)
             .assign(to: &appState.$audioLevel)
+
+        appState.$lastError
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                self?.updateErrorMenuItem(message)
+            }
+            .store(in: &cancellables)
+
+        appState.$selectedInputDeviceUID
+            .dropFirst()
+            .sink { [weak self] uid in
+                guard let self else { return }
+                let device = uid.isEmpty ? nil : self.audioDeviceManager.device(forUID: uid)
+                self.audioRecorder.setInputDevice(device)
+                if self.appState.recordingState != .recording {
+                    self.audioRecorder.resetAudioEngine()
+                }
+                if case .error = self.appState.recordingState {
+                    self.appState.recordingState = .idle
+                }
+            }
+            .store(in: &cancellables)
+
+        audioDeviceManager.$inputDevices
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] devices in
+                guard let self else { return }
+                let selectedUID = self.appState.selectedInputDeviceUID
+                guard !selectedUID.isEmpty else { return }
+                if !devices.contains(where: { $0.uid == selectedUID }) {
+                    self.appState.selectedInputDeviceUID = ""
+                    self.audioRecorder.setInputDevice(nil)
+                }
+            }
+            .store(in: &cancellables)
 
         // Re-register hotkeys when configs change
         appState.$toggleHotkeyConfig
@@ -197,8 +255,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateMenu(for state: RecordingState) {
-        guard let menu = statusItem.menu, menu.items.count > 2 else { return }
-        let recordingItem = menu.items[2] // After version item and separator
+        guard let recordingItem = recordingMenuItem else { return }
 
         switch state {
         case .idle:
@@ -216,11 +273,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func updateErrorMenuItem(_ message: String?) {
+        guard let errorMenuItem, let errorSeparatorItem else { return }
+        guard let message, !message.isEmpty else {
+            errorMenuItem.isHidden = true
+            errorSeparatorItem.isHidden = true
+            return
+        }
+
+        let trimmed = message.count > 160 ? "\(message.prefix(157))..." : message
+        errorMenuItem.title = "Last error: \(trimmed)"
+        errorMenuItem.isHidden = false
+        errorSeparatorItem.isHidden = false
+    }
+
     private func updateInitializingState(_ isInitializing: Bool) {
         guard let button = statusItem.button,
               let menu = statusItem.menu,
               menu.items.count > 2 else { return }
-        let recordingItem = menu.items[2] // After version item and separator
+        guard let recordingItem = recordingMenuItem else { return }
 
         if isInitializing {
             button.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "Loading Model")
@@ -370,12 +441,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             overlayWindow.show(position: appState.overlayPosition)
             startEscapeKeyMonitor()
         } catch {
-            appState.recordingState = .error("Failed to start recording: \(error.localizedDescription)")
-            appState.lastError = error.localizedDescription
+            audioRecorder.resetAudioEngine()
+
+            let deviceName = appState.selectedInputDeviceUID.isEmpty
+                ? "System Default"
+                : (audioDeviceManager.device(forUID: appState.selectedInputDeviceUID)?.name ?? "Selected Microphone")
+            let nsError = error as NSError
+            let errorDetails = "\(error.localizedDescription) (code \(nsError.code))"
+            let message = "Couldn’t start recording with \(deviceName). \(errorDetails)"
+
+            appState.recordingState = .error(message)
+            appState.lastError = message
             if appState.showNotificationOnError {
-                showNotification(title: "Recording Error", body: error.localizedDescription)
+                showNotification(title: "Recording Error", body: message)
             }
+            showRecordingErrorAlert(message)
         }
+    }
+
+    private func showRecordingErrorAlert(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Recording Failed"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func showNoModelAlert() {
@@ -600,6 +691,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let settingsView = SettingsView(modelManager: modelManager)
             .environmentObject(appState)
+            .environmentObject(audioDeviceManager)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),

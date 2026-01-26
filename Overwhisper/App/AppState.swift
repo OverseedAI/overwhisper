@@ -32,8 +32,12 @@ enum RecordingState: Equatable {
     case error(String)
 
     var isIdle: Bool {
-        if case .idle = self { return true }
-        return false
+        switch self {
+        case .idle, .error:
+            return true
+        case .recording, .transcribing:
+            return false
+        }
     }
 }
 
@@ -260,6 +264,9 @@ class AppState: ObservableObject {
     @Published var muteSystemAudioWhileRecording: Bool {
         didSet { UserDefaults.standard.set(muteSystemAudioWhileRecording, forKey: "muteSystemAudioWhileRecording") }
     }
+    @Published var selectedInputDeviceUID: String {
+        didSet { UserDefaults.standard.set(selectedInputDeviceUID, forKey: "selectedInputDeviceUID") }
+    }
     @Published var startAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(startAtLogin, forKey: "startAtLogin")
@@ -339,6 +346,7 @@ class AppState: ObservableObject {
         self.playSoundOnStart = UserDefaults.standard.bool(forKey: "playSoundOnStart")
         self.showNotificationOnError = UserDefaults.standard.object(forKey: "showNotificationOnError") as? Bool ?? true
         self.muteSystemAudioWhileRecording = UserDefaults.standard.bool(forKey: "muteSystemAudioWhileRecording")
+        self.selectedInputDeviceUID = UserDefaults.standard.string(forKey: "selectedInputDeviceUID") ?? ""
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
 
         // Load toggle hotkey (with migration from legacy hotkeyConfig)
