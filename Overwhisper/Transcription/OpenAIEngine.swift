@@ -3,6 +3,7 @@ import Foundation
 struct OpenAIEngine: TranscriptionEngine {
     private let apiKey: String
     private let baseURL = "https://api.openai.com/v1/audio/transcriptions"
+    private static let requestTimeoutSeconds: TimeInterval = 30
 
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -20,6 +21,7 @@ struct OpenAIEngine: TranscriptionEngine {
         let boundary = UUID().uuidString
         var request = URLRequest(url: URL(string: baseURL)!)
         request.httpMethod = "POST"
+        request.timeoutInterval = Self.requestTimeoutSeconds
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 

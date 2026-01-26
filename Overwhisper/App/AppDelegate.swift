@@ -31,6 +31,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Install crash reporter first
+        CrashReporter.shared.install()
+
         // Hide dock icon - menu bar only
         NSApp.setActivationPolicy(.accessory)
 
@@ -39,8 +42,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupBindings()
         setupSleepWakeHandling()
 
-        // Request microphone permission
+        // Request permissions
         requestMicrophonePermission()
+        requestAccessibilityPermission()
 
         // Initialize transcription engine
         Task {
@@ -240,6 +244,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func requestAccessibilityPermission() {
+        // This will prompt the user if permission is not already granted
+        // The system will show its own dialog asking for permission
+        if !TextInserter.requestAccessibilityPermission() {
+            // Permission not yet granted, the system dialog is now showing
+            // We don't need to do anything else here - the user will grant
+            // permission in System Settings
+            appState.addDebugLog("Accessibility permission requested", source: "Permissions")
+        }
+    }
+
     private func showPermissionAlert(for permission: String) {
         let alert = NSAlert()
         alert.messageText = "\(permission) Access Required"
@@ -256,16 +271,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func initializeTranscriptionEngine() async {
-        // Cancel any existing initialization
-        initializationTask?.cancel()
-
-        // Prevent concurrent initialization
+        // Prevent concurrent initialization - this check happens synchronously on @MainActor
+        // before any suspension points, so it's race-free
         guard !appState.isInitializingEngine else {
             print("Engine initialization already in progress, skipping")
             return
         }
 
         appState.isInitializingEngine = true
+        defer { appState.isInitializingEngine = false }
+
         print("Starting engine initialization for: \(appState.transcriptionEngine.rawValue)")
 
         switch appState.transcriptionEngine {
@@ -277,7 +292,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptionEngine = OpenAIEngine(apiKey: appState.openAIAPIKey)
         }
 
-        appState.isInitializingEngine = false
         print("Engine initialization complete")
     }
 
@@ -394,8 +408,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWindow.showTranscribing()
 
         Task {
+            var audioURL: URL?
+
             do {
-                let audioURL = try audioRecorder.stopRecording()
+                audioURL = try audioRecorder.stopRecording()
+
+                guard let url = audioURL else {
+                    throw TranscriptionError.noAudioData
+                }
 
                 guard let engine = transcriptionEngine else {
                     throw TranscriptionError.engineNotInitialized
@@ -407,17 +427,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     : "WhisperKit \(appState.whisperModel.rawValue)"
                 appState.addDebugLog("Starting transcription with \(modelInfo)", source: "Transcription")
 
-                let text = try await engine.transcribe(audioURL: audioURL)
+                let text = try await engine.transcribe(audioURL: url)
 
-                // Clean up audio file
-                try? FileManager.default.removeItem(at: audioURL)
+                // Clean up audio file after successful transcription
+                try? FileManager.default.removeItem(at: url)
 
                 if !text.isEmpty {
                     appState.lastTranscription = text
-                    textInserter.insertText(text)
+                    let didPaste = textInserter.insertText(text)
 
-                    if appState.playSoundOnCompletion {
-                        NSSound(named: .init("Tink"))?.play()
+                    if didPaste {
+                        if appState.playSoundOnCompletion {
+                            NSSound(named: .init("Tink"))?.play()
+                        }
+                    } else {
+                        // Accessibility permission not granted - text is in clipboard
+                        showNotification(
+                            title: "Text Copied",
+                            body: "Accessibility permission needed for auto-paste. Text copied to clipboard - press Cmd+V to paste."
+                        )
                     }
                 }
 
@@ -426,23 +454,81 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             } catch {
                 print("Transcription error: \(error)")
-                appState.recordingState = .error(error.localizedDescription)
-                appState.lastError = error.localizedDescription
-                overlayWindow.hide()
+                appState.addDebugLog("Transcription failed: \(error.localizedDescription)", source: "Transcription")
 
-                // Try cloud fallback if enabled
-                if appState.enableCloudFallback && appState.transcriptionEngine == .whisperKit && !appState.openAIAPIKey.isEmpty {
-                    await tryCloudFallback()
-                } else if appState.showNotificationOnError {
-                    showNotification(title: "Transcription Error", body: error.localizedDescription)
+                // Try cloud fallback if enabled and we have the audio file
+                let shouldTryFallback = appState.enableCloudFallback
+                    && appState.transcriptionEngine == .whisperKit
+                    && !appState.openAIAPIKey.isEmpty
+                    && audioURL != nil
+
+                if shouldTryFallback, let url = audioURL {
+                    let fallbackSucceeded = await tryCloudFallback(audioURL: url)
+                    if !fallbackSucceeded {
+                        appState.recordingState = .error(error.localizedDescription)
+                        appState.lastError = error.localizedDescription
+                        if appState.showNotificationOnError {
+                            showNotification(title: "Transcription Error", body: "Local and cloud transcription both failed")
+                        }
+                    }
+                } else {
+                    // Clean up audio file if no fallback attempted
+                    if let url = audioURL {
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                    appState.recordingState = .error(error.localizedDescription)
+                    appState.lastError = error.localizedDescription
+                    if appState.showNotificationOnError {
+                        showNotification(title: "Transcription Error", body: error.localizedDescription)
+                    }
                 }
+
+                overlayWindow.hide()
             }
         }
     }
 
-    private func tryCloudFallback() async {
-        // Note: Would need to save the audio URL to retry, simplified here
-        showNotification(title: "Fallback", body: "Using cloud transcription as fallback")
+    private func tryCloudFallback(audioURL: URL) async -> Bool {
+        appState.addDebugLog("Attempting cloud fallback with OpenAI", source: "Transcription")
+        showNotification(title: "Fallback", body: "Local transcription failed, trying cloud...")
+
+        let openAIEngine = OpenAIEngine(apiKey: appState.openAIAPIKey)
+
+        do {
+            let text = try await openAIEngine.transcribe(audioURL: audioURL)
+
+            // Clean up audio file after successful fallback
+            try? FileManager.default.removeItem(at: audioURL)
+
+            if !text.isEmpty {
+                appState.lastTranscription = text
+                let didPaste = textInserter.insertText(text)
+                appState.addDebugLog("Cloud fallback succeeded", source: "Transcription")
+
+                if didPaste {
+                    if appState.playSoundOnCompletion {
+                        NSSound(named: .init("Tink"))?.play()
+                    }
+                } else {
+                    showNotification(
+                        title: "Text Copied",
+                        body: "Accessibility permission needed for auto-paste. Text copied to clipboard - press Cmd+V to paste."
+                    )
+                }
+            }
+
+            appState.recordingState = .idle
+            return true
+
+        } catch {
+            print("Cloud fallback error: \(error)")
+            appState.addDebugLog("Cloud fallback failed: \(error.localizedDescription)", source: "Transcription")
+
+            // Clean up audio file after failed fallback
+            try? FileManager.default.removeItem(at: audioURL)
+
+            return false
+        }
     }
 
     private func cancelRecording() {

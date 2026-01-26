@@ -6,6 +6,7 @@ actor WhisperKitEngine: TranscriptionEngine {
     private let appState: AppState
     private let modelManager: ModelManager
     private var isInitialized = false
+    private var isInitializing = false
     private var currentModel: String?
 
     init(appState: AppState, modelManager: ModelManager) {
@@ -14,6 +15,15 @@ actor WhisperKitEngine: TranscriptionEngine {
     }
 
     func initialize() async {
+        // Prevent concurrent initialization - check and set atomically before any await
+        guard !isInitializing else {
+            print("WhisperKit initialization already in progress, skipping")
+            return
+        }
+        isInitializing = true
+
+        defer { isInitializing = false }
+
         let modelName = await appState.whisperModel.rawValue
 
         // Skip if already initialized with the same model
@@ -65,6 +75,8 @@ actor WhisperKitEngine: TranscriptionEngine {
         }
     }
 
+    private static let transcriptionTimeoutSeconds: UInt64 = 30
+
     func transcribe(audioURL: URL) async throws -> String {
         // Ensure initialized
         if !isInitialized {
@@ -93,17 +105,36 @@ actor WhisperKitEngine: TranscriptionEngine {
             clipTimestamps: []
         )
 
-        let results = try await whisperKit.transcribe(
-            audioPath: audioURL.path,
-            decodeOptions: decodingOptions
-        )
+        // Run transcription with timeout
+        let text = try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                let results = try await whisperKit.transcribe(
+                    audioPath: audioURL.path,
+                    decodeOptions: decodingOptions
+                )
+                // Combine all segments into final text
+                return results.compactMap { $0.text }.joined(separator: " ")
+            }
 
-        // Combine all segments into final text
-        let text = results.compactMap { $0.text }.joined(separator: " ")
+            group.addTask {
+                try await Task.sleep(nanoseconds: Self.transcriptionTimeoutSeconds * 1_000_000_000)
+                throw WhisperKitError.timeout
+            }
+
+            // Return the first result (either transcription completes or timeout fires)
+            guard let result = try await group.next() else {
+                throw WhisperKitError.transcriptionFailed("No result")
+            }
+
+            // Cancel the other task
+            group.cancelAll()
+
+            return result
+        }
 
         print("Transcription result: \(text)")
 
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
     }
 }
 
@@ -111,6 +142,7 @@ enum WhisperKitError: LocalizedError {
     case notInitialized
     case modelNotFound
     case transcriptionFailed(String)
+    case timeout
 
     var errorDescription: String? {
         switch self {
@@ -120,6 +152,8 @@ enum WhisperKitError: LocalizedError {
             return "Whisper model not found"
         case .transcriptionFailed(let message):
             return "Transcription failed: \(message)"
+        case .timeout:
+            return "Transcription timed out after 30 seconds"
         }
     }
 }
