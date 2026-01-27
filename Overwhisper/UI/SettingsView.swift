@@ -97,15 +97,42 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                Link("Overseed AI", destination: URL(string: "https://overseed.ai/")!)
-                Link("X (Twitter) @ _halshin", destination: URL(string: "https://x.com/_halshin")!)
-                Link("LinkedIn: Hal Shin", destination: URL(string: "https://www.linkedin.com/in/halshin/")!)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Thanks for using Overwhisper! For issues and inquiries, please visit:")
+                        .font(.callout)
+                    Link("github.com/OverseedAI/overwhisper", destination: URL(string: "https://github.com/OverseedAI/overwhisper")!)
+                }
+                .padding(.vertical, 4)
+
+                HStack {
+                    Text("Company Website")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Link("overseed.ai", destination: URL(string: "https://overseed.ai/")!)
+                }
+
+                HStack {
+                    Text("X (Twitter)")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Link("@_halshin", destination: URL(string: "https://x.com/_halshin")!)
+                }
+
+                HStack {
+                    Text("LinkedIn")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Link("Hal Shin", destination: URL(string: "https://www.linkedin.com/in/halshin/")!)
+                }
+
+                HStack {
+                    Text("YouTube")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Link("@halshin_software", destination: URL(string: "https://www.youtube.com/@halshin_software")!)
+                }
             } header: {
                 Text("Support")
-            } footer: {
-                Text("Need help or want updates? Reach out anytime.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)

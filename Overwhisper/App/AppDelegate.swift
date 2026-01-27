@@ -100,9 +100,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let versionItem = NSMenuItem(title: "Overwhisper v\(version)", action: nil, keyEquivalent: "")
         versionItem.isEnabled = false
         menu.addItem(versionItem)
+
+        let builtByItem = NSMenuItem(title: "Built by Hal Shin", action: nil, keyEquivalent: "")
+        builtByItem.isEnabled = false
+        menu.addItem(builtByItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let recordingItem = NSMenuItem(title: "Start Recording", action: #selector(toggleRecording), keyEquivalent: "")
+        recordingItem.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Record")
         menu.addItem(recordingItem)
         self.recordingMenuItem = recordingItem
 
@@ -118,7 +124,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.errorMenuItem = errorItem
 
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: ""))
+
+        let updateItem = NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "")
+        updateItem.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: "Update")
+        menu.addItem(updateItem)
+
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Overwhisper", action: #selector(quitApp), keyEquivalent: "q"))
@@ -274,15 +284,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch state {
         case .idle:
             recordingItem.title = "Start Recording"
+            recordingItem.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Record")
             recordingItem.isEnabled = true
         case .recording:
             recordingItem.title = "Stop Recording"
+            recordingItem.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: "Stop")
             recordingItem.isEnabled = true
         case .transcribing:
             recordingItem.title = "Transcribing..."
+            recordingItem.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Transcribing")
             recordingItem.isEnabled = false
         case .error:
             recordingItem.title = "Start Recording"
+            recordingItem.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Record")
             recordingItem.isEnabled = true
         }
     }
