@@ -288,6 +288,7 @@ struct ModelsSettingsView: View {
 
 struct ModelRowView: View {
     @EnvironmentObject var appState: AppState
+    @State private var showDeleteConfirmation = false
     let model: WhisperModel
     let isDownloaded: Bool
     let isSelected: Bool
@@ -352,7 +353,7 @@ struct ModelRowView: View {
                     }
 
                     Button(action: {
-                        try? modelManager.deleteModel(model.rawValue)
+                        showDeleteConfirmation = true
                     }) {
                         Image(systemName: "trash")
                             .foregroundColor(.red)
@@ -373,6 +374,16 @@ struct ModelRowView: View {
             }
         }
         .padding(.vertical, 4)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+        .alert("Delete Model", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                try? modelManager.deleteModel(model.rawValue)
+            }
+        } message: {
+            Text("Are you sure you want to delete \(model.displayName)? You'll need to download it again to use it.")
+        }
     }
 }
 
