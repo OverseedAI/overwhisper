@@ -797,7 +797,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Overwhisper Settings"
         window.minSize = NSSize(width: 500, height: 450)
         window.contentView = NSHostingView(rootView: settingsView)
-        window.center()
+        window.level = .normal
+        window.collectionBehavior = [.moveToActiveSpace]
+        let frameName = "OverwhisperSettingsWindow"
+        window.setFrameAutosaveName(frameName)
+        if !window.setFrameUsingName(frameName) {
+            window.center()
+        }
         window.isReleasedWhenClosed = false
 
         self.settingsWindow = window
