@@ -408,14 +408,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Prevent concurrent initialization - this check happens synchronously on @MainActor
         // before any suspension points, so it's race-free
         guard !appState.isInitializingEngine else {
-            print("Engine initialization already in progress, skipping")
+            AppLogger.app.debug("Engine initialization already in progress, skipping")
             return
         }
 
         appState.isInitializingEngine = true
         defer { appState.isInitializingEngine = false }
 
-        print("Starting engine initialization for: \(appState.transcriptionEngine.rawValue)")
+        AppLogger.app.info("Starting engine initialization for: \(self.appState.transcriptionEngine.rawValue)")
 
         switch appState.transcriptionEngine {
         case .whisperKit:
@@ -426,7 +426,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptionEngine = OpenAIEngine(apiKey: appState.openAIAPIKey)
         }
 
-        print("Engine initialization complete")
+        AppLogger.app.info("Engine initialization complete")
     }
 
     private func handleHotkeyEvent(_ event: HotkeyEvent, mode: HotkeyMode) {
@@ -609,7 +609,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 overlayWindow.hide()
 
             } catch {
-                print("Transcription error: \(error)")
+                AppLogger.transcription.error("Transcription error: \(error.localizedDescription)")
                 appState.addDebugLog("Transcription failed: \(error.localizedDescription)", source: "Transcription")
 
                 // Try cloud fallback if enabled and we have the audio file
@@ -677,7 +677,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return true
 
         } catch {
-            print("Cloud fallback error: \(error)")
+            AppLogger.transcription.error("Cloud fallback error: \(error.localizedDescription)")
             appState.addDebugLog("Cloud fallback failed: \(error.localizedDescription)", source: "Transcription")
 
             // Clean up audio file after failed fallback
@@ -755,7 +755,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // When running via swift run, we don't have one, so use a fallback
         guard Bundle.main.bundleIdentifier != nil else {
             // Fallback: just print to console when running without bundle
-            print("[\(title)] \(body)")
+            AppLogger.app.info("[\(title)] \(body)")
             return
         }
 

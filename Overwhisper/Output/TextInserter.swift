@@ -26,7 +26,7 @@ class TextInserter {
             // No permission - just copy to clipboard (don't restore previous)
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
-            print("Accessibility permission not granted - text copied to clipboard only")
+            AppLogger.system.warning("Accessibility permission not granted - text copied to clipboard only")
             return false
         }
 
@@ -57,7 +57,7 @@ class TextInserter {
     private func simulatePaste() {
         // Create event source
         guard let source = CGEventSource(stateID: .hidSystemState) else {
-            print("Failed to create event source")
+            AppLogger.system.error("Failed to create event source")
             return
         }
 
@@ -66,14 +66,14 @@ class TextInserter {
 
         // Create key down event with Command modifier
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true) else {
-            print("Failed to create key down event")
+            AppLogger.system.error("Failed to create key down event")
             return
         }
         keyDown.flags = .maskCommand
 
         // Create key up event
         guard let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
-            print("Failed to create key up event")
+            AppLogger.system.error("Failed to create key up event")
             return
         }
         keyUp.flags = .maskCommand

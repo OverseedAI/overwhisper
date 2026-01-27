@@ -40,12 +40,12 @@ class HotkeyManager {
 
         // Skip registration if hotkey is not set
         guard !config.isEmpty else {
-            print("Toggle hotkey not set, skipping registration")
+            AppLogger.hotkey.debug("Toggle hotkey not set, skipping registration")
             return
         }
 
         guard let key = Key(carbonKeyCode: UInt32(config.keyCode)) else {
-            print("Invalid toggle key code: \(config.keyCode)")
+            AppLogger.hotkey.error("Invalid toggle key code: \(config.keyCode)")
             return
         }
 
@@ -63,12 +63,12 @@ class HotkeyManager {
 
         // Skip registration if hotkey is not set
         guard !config.isEmpty else {
-            print("Push-to-talk hotkey not set, skipping registration")
+            AppLogger.hotkey.debug("Push-to-talk hotkey not set, skipping registration")
             return
         }
 
         guard let key = Key(carbonKeyCode: UInt32(config.keyCode)) else {
-            print("Invalid push-to-talk key code: \(config.keyCode)")
+            AppLogger.hotkey.error("Invalid push-to-talk key code: \(config.keyCode)")
             return
         }
 
@@ -118,7 +118,7 @@ class HotkeyManager {
         let trusted = AXIsProcessTrustedWithOptions(options)
 
         if !trusted {
-            print("Accessibility permission not granted")
+            AppLogger.system.warning("Accessibility permission not granted")
         }
 
         return trusted

@@ -544,7 +544,7 @@ enum LaunchAtLogin {
                     try SMAppService.mainApp.unregister()
                 }
             } catch {
-                print("Failed to set launch at login: \(error)")
+                AppLogger.system.error("Failed to set launch at login: \(error.localizedDescription)")
             }
         }
     }
@@ -564,14 +564,14 @@ enum SystemAudioManager {
     static func muteSystemAudio() {
         // Check if volume control is supported
         guard checkSupport() else {
-            print("[SystemAudioManager] Volume control not supported on current audio device")
+            AppLogger.system.warning("System audio volume control not supported on current audio device")
             return
         }
 
         // First, check if already muted
         if let muted = isSystemMuted(), muted {
             wasSystemMuted = true
-            print("[SystemAudioManager] System already muted")
+            AppLogger.system.info("System already muted")
             return
         }
 
@@ -579,7 +579,7 @@ enum SystemAudioManager {
 
         // Try mute command first
         if setSystemMuted(true) {
-            print("[SystemAudioManager] Muted using mute command")
+            AppLogger.system.info("Muted using mute command")
             return
         }
 
@@ -587,7 +587,7 @@ enum SystemAudioManager {
         if let currentVolume = getSystemVolume() {
             previousVolume = currentVolume
             if setSystemVolume(0) {
-                print("[SystemAudioManager] Muted by setting volume to 0 (was \(previousVolume))")
+                AppLogger.system.info("Muted by setting volume to 0 (was \(previousVolume))")
             }
         }
     }
@@ -598,20 +598,20 @@ enum SystemAudioManager {
         }
 
         if wasSystemMuted {
-            print("[SystemAudioManager] System was muted before recording, not restoring")
+            AppLogger.system.info("System was muted before recording, not restoring")
             return
         }
 
         // Try unmute command first
         if setSystemMuted(false) {
-            print("[SystemAudioManager] Unmuted using mute command")
+            AppLogger.system.info("Unmuted using mute command")
             return
         }
 
         // Fallback: restore previous volume
         if previousVolume > 0 {
             if setSystemVolume(previousVolume) {
-                print("[SystemAudioManager] Restored volume to \(previousVolume)")
+                AppLogger.system.info("Restored volume to \(previousVolume)")
             }
         }
     }
@@ -625,10 +625,10 @@ enum SystemAudioManager {
         // Try to get the current volume - if it returns nil, volume control is not supported
         if let volume = getSystemVolume() {
             isSupported = true
-            print("[SystemAudioManager] Volume control supported (current volume: \(volume))")
+            AppLogger.system.debug("Volume control supported (current volume: \(volume))")
         } else {
             isSupported = false
-            print("[SystemAudioManager] Volume control not supported (external audio interface?)")
+            AppLogger.system.warning("Volume control not supported (external audio interface?)")
         }
         return isSupported
     }

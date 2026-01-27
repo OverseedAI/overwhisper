@@ -17,7 +17,7 @@ actor WhisperKitEngine: TranscriptionEngine {
     func initialize() async {
         // Prevent concurrent initialization - check and set atomically before any await
         guard !isInitializing else {
-            print("WhisperKit initialization already in progress, skipping")
+            AppLogger.transcription.debug("WhisperKit initialization already in progress, skipping")
             return
         }
         isInitializing = true
@@ -31,7 +31,7 @@ actor WhisperKitEngine: TranscriptionEngine {
             return
         }
 
-        print("Initializing WhisperKit with model: \(modelName)")
+        AppLogger.transcription.info("Initializing WhisperKit with model: \(modelName)")
 
         do {
             await MainActor.run {
@@ -64,10 +64,10 @@ actor WhisperKitEngine: TranscriptionEngine {
             // Refresh the model list
             await modelManager.scanForModels()
 
-            print("WhisperKit initialized successfully")
+            AppLogger.transcription.info("WhisperKit initialized successfully")
 
         } catch {
-            print("Failed to initialize WhisperKit: \(error)")
+            AppLogger.transcription.error("Failed to initialize WhisperKit: \(error.localizedDescription)")
             await MainActor.run {
                 appState.isDownloadingModel = false
                 appState.lastError = "Failed to initialize WhisperKit: \(error.localizedDescription)"
@@ -87,7 +87,7 @@ actor WhisperKitEngine: TranscriptionEngine {
             throw WhisperKitError.notInitialized
         }
 
-        print("Transcribing audio from: \(audioURL.path)")
+        AppLogger.transcription.debug("Transcribing audio from: \(audioURL.path)")
 
         // Get language setting
         let language = await appState.language
@@ -132,7 +132,7 @@ actor WhisperKitEngine: TranscriptionEngine {
             return result
         }
 
-        print("Transcription result: \(text)")
+        AppLogger.transcription.debug("Transcription result: \(text)")
 
         return text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
     }

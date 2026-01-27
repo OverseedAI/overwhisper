@@ -50,7 +50,7 @@ class ModelManager: ObservableObject {
             scanDirectory(basePath, foundModels: &foundModels)
         }
 
-        print("Found models: \(foundModels)")
+        AppLogger.transcription.info("Found models: \(foundModels)")
 
         downloadedModels = foundModels
         appState.downloadedModels = foundModels

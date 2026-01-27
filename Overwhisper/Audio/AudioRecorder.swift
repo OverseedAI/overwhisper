@@ -327,7 +327,7 @@ class AudioRecorder: ObservableObject {
             do {
                 try audioFile?.write(from: convertedBuffer)
             } catch {
-                print("Error writing audio buffer: \(error)")
+                AppLogger.audio.error("Error writing audio buffer: \(error.localizedDescription)")
             }
         }
     }
