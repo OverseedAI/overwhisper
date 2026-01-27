@@ -134,44 +134,53 @@ struct HotkeyRecorderView: View {
     let recorderId: String  // Unique identifier for this recorder
     @State private var localMonitor: Any?
     @State private var globalMonitor: Any?
+    @State private var conflictMessage: String?
 
     private var isRecording: Bool {
         appState.activeHotkeyRecorder == recorderId
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(isRecording ? "Press a key..." : config.displayString)
-                .frame(minWidth: 100)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isRecording ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
-                .foregroundColor(config.isEmpty && !isRecording ? .secondary : .primary)
-                .cornerRadius(6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isRecording ? Color.accentColor : Color.clear, lineWidth: 2)
-                )
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(isRecording ? "Press a key..." : config.displayString)
+                    .frame(minWidth: 100)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(isRecording ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
+                    .foregroundColor(config.isEmpty && !isRecording ? .secondary : .primary)
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isRecording ? Color.accentColor : Color.clear, lineWidth: 2)
+                    )
 
-            Button(isRecording ? "Cancel" : "Record") {
-                if isRecording {
-                    stopRecording()
-                } else {
-                    startRecording()
+                Button(isRecording ? "Cancel" : "Record") {
+                    if isRecording {
+                        stopRecording()
+                    } else {
+                        startRecording()
+                    }
+                }
+                .buttonStyle(.bordered)
+
+                // Clear button - only show if hotkey is set and not recording
+                if !config.isEmpty && !isRecording {
+                    Button {
+                        config = .empty
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear hotkey")
                 }
             }
-            .buttonStyle(.bordered)
 
-            // Clear button - only show if hotkey is set and not recording
-            if !config.isEmpty && !isRecording {
-                Button {
-                    config = .empty
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Clear hotkey")
+            if let message = appState.hotkeyConflictMessage(for: recorderId) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.red)
             }
         }
         .onDisappear {
@@ -180,11 +189,22 @@ struct HotkeyRecorderView: View {
                 stopRecording()
             }
         }
-        .onChange(of: appState.activeHotkeyRecorder) { newValue in
+        .onChange(of: appState.activeHotkeyRecorder) { _, newValue in
             // If another recorder became active, clean up our monitors
             if newValue != recorderId {
                 cleanupMonitors()
             }
+        }
+        .alert(
+            "Hotkey Conflict",
+            isPresented: Binding(
+                get: { conflictMessage != nil },
+                set: { if !$0 { conflictMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(conflictMessage ?? "")
         }
     }
 
@@ -256,7 +276,14 @@ struct HotkeyRecorderView: View {
             return
         }
 
-        config = HotkeyConfig(keyCode: UInt32(event.keyCode), modifiers: modifiers)
+        let newConfig = HotkeyConfig(keyCode: UInt32(event.keyCode), modifiers: modifiers)
+        if let conflict = appState.hotkeyConflictMessage(for: recorderId, pendingConfig: newConfig) {
+            conflictMessage = conflict
+            stopRecording()
+            return
+        }
+
+        config = newConfig
         stopRecording()
     }
 }

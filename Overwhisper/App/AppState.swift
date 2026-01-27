@@ -402,6 +402,30 @@ class AppState: ObservableObject {
         recordingTimer?.invalidate()
         recordingTimer = nil
     }
+
+    func hotkeyConflictMessage(for recorderId: String, pendingConfig: HotkeyConfig? = nil) -> String? {
+        let currentConfig: HotkeyConfig
+        let otherConfig: HotkeyConfig
+        let otherName: String
+
+        switch recorderId {
+        case "toggle":
+            currentConfig = pendingConfig ?? toggleHotkeyConfig
+            otherConfig = pushToTalkHotkeyConfig
+            otherName = "Push-to-Talk"
+        case "pushToTalk":
+            currentConfig = pendingConfig ?? pushToTalkHotkeyConfig
+            otherConfig = toggleHotkeyConfig
+            otherName = "Toggle"
+        default:
+            return nil
+        }
+
+        guard !currentConfig.isEmpty, !otherConfig.isEmpty else { return nil }
+        guard currentConfig == otherConfig else { return nil }
+
+        return "Conflicts with \(otherName) hotkey."
+    }
 }
 
 // Keychain helper for secure API key storage
