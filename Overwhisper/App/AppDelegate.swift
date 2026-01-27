@@ -24,6 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var errorSeparatorItem: NSMenuItem?
     private var errorMenuItem: NSMenuItem?
     private var onboardingWindow: NSWindow?
+    private var recordingLimitTimer: Timer?
 
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
@@ -223,6 +224,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor in
                     await self?.initializeTranscriptionEngine()
                 }
+            }
+            .store(in: &cancellables)
+
+        appState.$recordingDurationLimitEnabled
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.refreshRecordingLimitTimer()
+            }
+            .store(in: &cancellables)
+
+        appState.$recordingDurationLimitSeconds
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.refreshRecordingLimitTimer()
             }
             .store(in: &cancellables)
 
@@ -486,6 +501,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             try audioRecorder.startRecording()
             appState.recordingState = .recording
             appState.startRecordingTimer()
+            startRecordingLimitTimer()
             overlayWindow.show(position: appState.overlayPosition)
             startEscapeKeyMonitor()
         } catch {
@@ -536,6 +552,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard appState.recordingState == .recording else { return }
 
         stopEscapeKeyMonitor()
+        stopRecordingLimitTimer()
 
         // Restore system audio if it was muted
         if appState.muteSystemAudioWhileRecording {
@@ -674,6 +691,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard appState.recordingState == .recording else { return }
 
         stopEscapeKeyMonitor()
+        stopRecordingLimitTimer()
 
         // Restore system audio if it was muted
         if appState.muteSystemAudioWhileRecording {
@@ -700,6 +718,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let monitor = escapeKeyMonitor {
             NSEvent.removeMonitor(monitor)
             escapeKeyMonitor = nil
+        }
+    }
+
+    private func startRecordingLimitTimer() {
+        stopRecordingLimitTimer()
+
+        guard appState.recordingDurationLimitEnabled else { return }
+        let limit = max(10, appState.recordingDurationLimitSeconds)
+
+        recordingLimitTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(limit), repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.appState.recordingState == .recording {
+                    self.stopAndTranscribe()
+                }
+            }
+        }
+    }
+
+    private func stopRecordingLimitTimer() {
+        recordingLimitTimer?.invalidate()
+        recordingLimitTimer = nil
+    }
+
+    private func refreshRecordingLimitTimer() {
+        if appState.recordingState == .recording {
+            startRecordingLimitTimer()
+        } else {
+            stopRecordingLimitTimer()
         }
     }
 

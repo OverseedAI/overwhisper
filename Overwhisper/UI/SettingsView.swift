@@ -356,6 +356,18 @@ struct OutputSettingsView: View {
                 .pickerStyle(.menu)
 
                 Toggle("Mute system audio while recording", isOn: $appState.muteSystemAudioWhileRecording)
+
+                Toggle("Limit recording duration", isOn: $appState.recordingDurationLimitEnabled)
+
+                if appState.recordingDurationLimitEnabled {
+                    Stepper(
+                        value: $appState.recordingDurationLimitSeconds,
+                        in: 10...600,
+                        step: 10
+                    ) {
+                        Text("Stop after \(appState.recordingDurationLimitSeconds) seconds")
+                    }
+                }
             } header: {
                 Text("Recording")
             } footer: {

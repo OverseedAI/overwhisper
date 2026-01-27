@@ -267,6 +267,12 @@ class AppState: ObservableObject {
     @Published var selectedInputDeviceUID: String {
         didSet { UserDefaults.standard.set(selectedInputDeviceUID, forKey: "selectedInputDeviceUID") }
     }
+    @Published var recordingDurationLimitEnabled: Bool {
+        didSet { UserDefaults.standard.set(recordingDurationLimitEnabled, forKey: "recordingDurationLimitEnabled") }
+    }
+    @Published var recordingDurationLimitSeconds: Int {
+        didSet { UserDefaults.standard.set(recordingDurationLimitSeconds, forKey: "recordingDurationLimitSeconds") }
+    }
     @Published var startAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(startAtLogin, forKey: "startAtLogin")
@@ -350,6 +356,9 @@ class AppState: ObservableObject {
         self.showNotificationOnError = UserDefaults.standard.object(forKey: "showNotificationOnError") as? Bool ?? true
         self.muteSystemAudioWhileRecording = UserDefaults.standard.bool(forKey: "muteSystemAudioWhileRecording")
         self.selectedInputDeviceUID = UserDefaults.standard.string(forKey: "selectedInputDeviceUID") ?? ""
+        self.recordingDurationLimitEnabled = UserDefaults.standard.bool(forKey: "recordingDurationLimitEnabled")
+        let storedLimit = UserDefaults.standard.integer(forKey: "recordingDurationLimitSeconds")
+        self.recordingDurationLimitSeconds = storedLimit > 0 ? storedLimit : 60
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
