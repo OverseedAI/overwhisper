@@ -23,6 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingMenuItem: NSMenuItem?
     private var errorSeparatorItem: NSMenuItem?
     private var errorMenuItem: NSMenuItem?
+    private var onboardingWindow: NSWindow?
 
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
@@ -46,9 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupBindings()
         setupSleepWakeHandling()
 
-        // Request permissions
-        requestMicrophonePermission()
-        requestAccessibilityPermission()
+        showOnboardingIfNeeded()
 
         // Initialize transcription engine
         Task {
@@ -324,6 +323,55 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // permission in System Settings
             appState.addDebugLog("Accessibility permission requested", source: "Permissions")
         }
+    }
+
+    private func showOnboardingIfNeeded() {
+        guard !appState.hasCompletedOnboarding else {
+            requestMicrophonePermission()
+            requestAccessibilityPermission()
+            return
+        }
+
+        if let window = onboardingWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+            return
+        }
+
+        let onboardingView = OnboardingView(
+            openAppSettings: { [weak self] in
+                self?.openSettings()
+            },
+            finishOnboarding: { [weak self] in
+                self?.completeOnboarding()
+            }
+        )
+        .environmentObject(appState)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Welcome to Overwhisper"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: onboardingView)
+        window.center()
+
+        onboardingWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    private func completeOnboarding() {
+        appState.hasCompletedOnboarding = true
+        onboardingWindow?.close()
+        onboardingWindow = nil
+        requestMicrophonePermission()
+        requestAccessibilityPermission()
     }
 
     private func showPermissionAlert(for permission: String) {

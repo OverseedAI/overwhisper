@@ -273,6 +273,9 @@ class AppState: ObservableObject {
             LaunchAtLogin.isEnabled = startAtLogin
         }
     }
+    @Published var hasCompletedOnboarding: Bool {
+        didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
+    }
     @Published var toggleHotkeyConfig: HotkeyConfig {
         didSet {
             if let data = try? JSONEncoder().encode(toggleHotkeyConfig) {
@@ -348,6 +351,7 @@ class AppState: ObservableObject {
         self.muteSystemAudioWhileRecording = UserDefaults.standard.bool(forKey: "muteSystemAudioWhileRecording")
         self.selectedInputDeviceUID = UserDefaults.standard.string(forKey: "selectedInputDeviceUID") ?? ""
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
+        self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
         // Load toggle hotkey (with migration from legacy hotkeyConfig)
         if let hotkeyData = UserDefaults.standard.data(forKey: "toggleHotkeyConfig"),
