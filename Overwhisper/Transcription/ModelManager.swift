@@ -194,31 +194,57 @@ class ModelManager: ObservableObject {
         var deleted = false
 
         // Check all possible locations where the model might be stored
+        // Must match the same paths as scanForModels()
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let homeDir = fileManager.homeDirectoryForCurrentUser
 
-        let possiblePaths = [
-            modelsDirectory.appendingPathComponent(modelName),
-            modelsDirectory.appendingPathComponent("openai_whisper-\(modelName)"),
-            appSupport.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-\(modelName)"),
-            homeDir.appendingPathComponent(".cache/huggingface/hub/models--argmaxinc--whisperkit-coreml/snapshots")
+        let searchPaths = [
+            // MacWhisper's model directory
+            appSupport.appendingPathComponent("MacWhisper/models/whisperkit/models/argmaxinc/whisperkit-coreml"),
+            // SuperWhisper's model directory
+            appSupport.appendingPathComponent("superwhisper/models/argmaxinc/whisperkit-coreml"),
+            // Huggingface in Documents
+            homeDir.appendingPathComponent("Documents/huggingface/models/argmaxinc/whisperkit-coreml"),
+            // Standard huggingface cache in Application Support
+            appSupport.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml"),
+            // Our custom directory
+            modelsDirectory
         ]
 
-        for path in possiblePaths {
-            if path.lastPathComponent == "snapshots" {
-                // Search in huggingface cache snapshots
-                if let snapshots = try? fileManager.contentsOfDirectory(at: path, includingPropertiesForKeys: nil) {
-                    for snapshot in snapshots where snapshot.hasDirectoryPath {
-                        let modelDir = snapshot.appendingPathComponent("openai_whisper-\(modelName)")
-                        if fileManager.fileExists(atPath: modelDir.path) {
+        // Search direct paths for model folders (with potential version suffixes)
+        for basePath in searchPaths {
+            guard let contents = try? fileManager.contentsOfDirectory(at: basePath, includingPropertiesForKeys: nil) else {
+                continue
+            }
+
+            for url in contents where url.hasDirectoryPath {
+                let name = url.lastPathComponent
+                // Match "openai_whisper-{modelName}" or "openai_whisper-{modelName}-v{version}"
+                if name == "openai_whisper-\(modelName)" ||
+                   name.hasPrefix("openai_whisper-\(modelName)-v") ||
+                   name == modelName {
+                    try fileManager.removeItem(at: url)
+                    deleted = true
+                    AppLogger.transcription.info("Deleted model at: \(url.path)")
+                }
+            }
+        }
+
+        // Also check huggingface hub cache structure
+        let hubCachePath = homeDir.appendingPathComponent(".cache/huggingface/hub/models--argmaxinc--whisperkit-coreml/snapshots")
+        if let snapshots = try? fileManager.contentsOfDirectory(at: hubCachePath, includingPropertiesForKeys: nil) {
+            for snapshot in snapshots where snapshot.hasDirectoryPath {
+                if let modelDirs = try? fileManager.contentsOfDirectory(at: snapshot, includingPropertiesForKeys: nil) {
+                    for modelDir in modelDirs where modelDir.hasDirectoryPath {
+                        let name = modelDir.lastPathComponent
+                        if name == "openai_whisper-\(modelName)" ||
+                           name.hasPrefix("openai_whisper-\(modelName)-v") {
                             try fileManager.removeItem(at: modelDir)
                             deleted = true
+                            AppLogger.transcription.info("Deleted model at: \(modelDir.path)")
                         }
                     }
                 }
-            } else if fileManager.fileExists(atPath: path.path) {
-                try fileManager.removeItem(at: path)
-                deleted = true
             }
         }
 
@@ -229,6 +255,8 @@ class ModelManager: ObservableObject {
             if modelName == appState.whisperModel.rawValue {
                 appState.isModelDownloaded = false
             }
+        } else {
+            AppLogger.transcription.warning("No model files found to delete for: \(modelName)")
         }
     }
 
