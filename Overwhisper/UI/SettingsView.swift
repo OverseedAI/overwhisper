@@ -95,6 +95,16 @@ struct GeneralSettingsView: View {
             Section("Advanced") {
                 Toggle("Debug Mode", isOn: $appState.debugModeEnabled)
             }
+
+            Section("Support") {
+                Link("Overseed AI", destination: URL(string: "https://overseed.ai/")!)
+                Link("X (Twitter) @ _halshin", destination: URL(string: "https://x.com/_halshin")!)
+                Link("LinkedIn: Hal Shin", destination: URL(string: "https://www.linkedin.com/in/halshin/")!)
+            } footer: {
+                Text("Need help or want updates? Reach out anytime.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()
