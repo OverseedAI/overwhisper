@@ -382,19 +382,31 @@ struct OutputSettingsView: View {
                 Toggle("Show notification on error", isOn: $appState.showNotificationOnError)
             }
 
-            Section("Last Transcription") {
-                if appState.lastTranscription.isEmpty {
+            Section("Transcription History") {
+                if appState.transcriptionHistory.isEmpty {
                     Text("No transcription yet")
                         .foregroundColor(.secondary)
                         .italic()
                 } else {
-                    Text(appState.lastTranscription)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(appState.transcriptionHistory.prefix(10)) { entry in
+                                TranscriptionHistoryRow(entry: entry)
+                            }
+                        }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                        .background(Color.secondary.opacity(0.1))
-                        .cornerRadius(6)
+                    }
+                    .frame(maxHeight: 180)
+
+                    if appState.transcriptionHistory.count > 10 {
+                        Text("Showing 10 of \(appState.transcriptionHistory.count) entries")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Button("Clear History") {
+                        appState.clearTranscriptionHistory()
+                    }
                 }
 
                 if let error = appState.lastError {
@@ -452,6 +464,33 @@ struct OverlayPositionGrid: View {
             }
         }
         .padding(.vertical, 8)
+    }
+}
+
+struct TranscriptionHistoryRow: View {
+    let entry: TranscriptionHistoryEntry
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(entry.text)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(Self.dateFormatter.string(from: entry.timestamp))
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(6)
     }
 }
 

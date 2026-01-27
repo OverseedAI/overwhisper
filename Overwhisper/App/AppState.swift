@@ -25,6 +25,18 @@ struct DebugLogEntry: Identifiable {
     }
 }
 
+struct TranscriptionHistoryEntry: Identifiable, Codable, Equatable {
+    let id: UUID
+    let timestamp: Date
+    let text: String
+
+    init(id: UUID = UUID(), timestamp: Date = Date(), text: String) {
+        self.id = id
+        self.timestamp = timestamp
+        self.text = text
+    }
+}
+
 enum RecordingState: Equatable {
     case idle
     case recording
@@ -314,6 +326,9 @@ class AppState: ObservableObject {
     // Last transcription result
     @Published var lastTranscription: String = ""
     @Published var lastError: String?
+    @Published var transcriptionHistory: [TranscriptionHistoryEntry] {
+        didSet { persistTranscriptionHistory() }
+    }
 
     // Debug mode
     @Published var debugModeEnabled: Bool {
@@ -326,6 +341,8 @@ class AppState: ObservableObject {
     @Published var activeHotkeyRecorder: String?
 
     private var recordingTimer: Timer?
+    private let maxTranscriptionHistory = 50
+    private let transcriptionHistoryKey = "transcriptionHistory"
 
     init() {
         // Load settings from UserDefaults
@@ -383,6 +400,14 @@ class AppState: ObservableObject {
         }
 
         self.debugModeEnabled = UserDefaults.standard.bool(forKey: "debugModeEnabled")
+
+        if let historyData = UserDefaults.standard.data(forKey: transcriptionHistoryKey),
+           let history = try? JSONDecoder().decode([TranscriptionHistoryEntry].self, from: historyData) {
+            self.transcriptionHistory = history
+            self.lastTranscription = history.first?.text ?? ""
+        } else {
+            self.transcriptionHistory = []
+        }
     }
 
     func addDebugLog(_ message: String, level: DebugLogEntry.DebugLogLevel = .info, source: String = "App") {
@@ -410,6 +435,27 @@ class AppState: ObservableObject {
     func stopRecordingTimer() {
         recordingTimer?.invalidate()
         recordingTimer = nil
+    }
+
+    func addTranscriptionHistory(_ text: String) {
+        guard !text.isEmpty else { return }
+        let entry = TranscriptionHistoryEntry(text: text)
+        transcriptionHistory.insert(entry, at: 0)
+        if transcriptionHistory.count > maxTranscriptionHistory {
+            transcriptionHistory = Array(transcriptionHistory.prefix(maxTranscriptionHistory))
+        }
+        lastTranscription = text
+    }
+
+    func clearTranscriptionHistory() {
+        transcriptionHistory = []
+        lastTranscription = ""
+    }
+
+    private func persistTranscriptionHistory() {
+        if let data = try? JSONEncoder().encode(transcriptionHistory) {
+            UserDefaults.standard.set(data, forKey: transcriptionHistoryKey)
+        }
     }
 
     func hotkeyConflictMessage(for recorderId: String, pendingConfig: HotkeyConfig? = nil) -> String? {
