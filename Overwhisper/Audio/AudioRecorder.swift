@@ -238,6 +238,21 @@ class AudioRecorder: ObservableObject {
     func startRecording() throws {
         guard !isRecording else { return }
 
+        // Check microphone permission before accessing inputNode
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            break
+        case .notDetermined:
+            // Request permission synchronously by triggering the inputNode access
+            // This will prompt the user, but may still crash if denied
+            // Better to request permission on app launch
+            throw AudioRecorderError.noPermission
+        case .denied, .restricted:
+            throw AudioRecorderError.noPermission
+        @unknown default:
+            throw AudioRecorderError.noPermission
+        }
+
         // Create temporary file for recording
         let tempDir = FileManager.default.temporaryDirectory
         let fileName = "overwhisper_recording_\(UUID().uuidString).wav"
@@ -247,7 +262,8 @@ class AudioRecorder: ObservableObject {
             throw AudioRecorderError.failedToCreateFile
         }
 
-        let inputNode = audioEngine.inputNode
+        // Create fresh engine to ensure clean state for built-in mic
+        audioEngine = AVAudioEngine()
 
         do {
             try applyInputDevice()
@@ -255,6 +271,8 @@ class AudioRecorder: ObservableObject {
             selectedInputDeviceID = nil
             try applyInputDevice()
         }
+
+        let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw AudioRecorderError.invalidFormat
@@ -293,6 +311,7 @@ class AudioRecorder: ObservableObject {
             self?.processAudioBuffer(buffer, recordingFormat: recordingFormat)
         }
 
+        audioEngine.prepare()
         try audioEngine.start()
         isRecording = true
 
@@ -459,19 +478,20 @@ class AudioRecorder: ObservableObject {
     }
 
     func applyInputDevice() throws {
+        // If using system default, don't override - let AVAudioEngine use its default
+        guard let targetDeviceID = selectedInputDeviceID else { return }
+
         guard let audioUnit = audioEngine.inputNode.audioUnit else {
             throw AudioRecorderError.deviceConfigurationFailed
         }
 
-        let deviceID = selectedInputDeviceID ?? AudioDeviceManager.defaultInputDeviceID()
-        guard var targetDeviceID = deviceID else { return }
-
+        var deviceID = targetDeviceID
         let status = AudioUnitSetProperty(
             audioUnit,
             kAudioOutputUnitProperty_CurrentDevice,
             kAudioUnitScope_Global,
             0,
-            &targetDeviceID,
+            &deviceID,
             UInt32(MemoryLayout<AudioDeviceID>.size)
         )
 
