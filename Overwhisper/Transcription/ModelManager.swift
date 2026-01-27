@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import WhisperKit
 
 @MainActor
@@ -151,7 +152,7 @@ class ModelManager: ObservableObject {
 
         do {
             // Use WhisperKit's built-in download functionality
-            _ = try await WhisperKit.download(
+            let modelFolder = try await WhisperKit.download(
                 variant: modelName,
                 progressCallback: { progress in
                     Task { @MainActor in
@@ -160,6 +161,13 @@ class ModelManager: ObservableObject {
                     }
                 }
             )
+
+            do {
+                try validateModelChecksum(at: modelFolder)
+            } catch {
+                try? FileManager.default.removeItem(at: modelFolder)
+                throw error
+            }
 
             // Model downloaded successfully
             downloadedModels.insert(modelName)
@@ -172,7 +180,11 @@ class ModelManager: ObservableObject {
         } catch {
             appState.isDownloadingModel = false
             appState.currentlyDownloadingModel = nil
-            appState.lastError = "Failed to download model: \(error.localizedDescription)"
+            if let validationError = error as? ModelDownloadError {
+                appState.lastError = validationError.localizedDescription
+            } else {
+                appState.lastError = "Failed to download model: \(error.localizedDescription)"
+            }
             throw error
         }
     }
@@ -226,5 +238,107 @@ class ModelManager: ObservableObject {
 
     func availableModels() -> [WhisperModel] {
         return WhisperModel.allCases
+    }
+
+    private func validateModelChecksum(at modelFolder: URL) throws {
+        let repoRoot = modelFolder.deletingLastPathComponent()
+        let metadataRoot = repoRoot
+            .appendingPathComponent(".cache")
+            .appendingPathComponent("huggingface")
+            .appendingPathComponent("download")
+
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(
+            at: modelFolder,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            throw ModelDownloadError.validationFailed("Unable to enumerate model files for checksum validation.")
+        }
+
+        for case let fileURL as URL in enumerator {
+            let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
+            if resourceValues.isDirectory == true { continue }
+
+            let repoPath = repoRoot.path.hasSuffix("/") ? repoRoot.path : repoRoot.path + "/"
+            guard fileURL.path.hasPrefix(repoPath) else { continue }
+            let relativePath = String(fileURL.path.dropFirst(repoPath.count))
+
+            let metadataPath = metadataRoot.appendingPathComponent(relativePath + ".metadata")
+            guard fileManager.fileExists(atPath: metadataPath.path) else {
+                throw ModelDownloadError.missingMetadata(relativePath)
+            }
+
+            let metadata = try readDownloadMetadata(at: metadataPath)
+            if isSha256(metadata.etag) {
+                let fileHash = try computeFileHash(file: fileURL)
+                if fileHash != metadata.etag {
+                    throw ModelDownloadError.checksumMismatch(relativePath)
+                }
+            }
+        }
+    }
+
+    private func readDownloadMetadata(at url: URL) throws -> DownloadMetadata {
+        let contents = try String(contentsOf: url, encoding: .utf8)
+        let lines = contents.components(separatedBy: .newlines)
+        guard lines.count >= 2 else {
+            throw ModelDownloadError.invalidMetadata(url.lastPathComponent)
+        }
+
+        let commitHash = lines[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        let etag = lines[1].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !etag.isEmpty else {
+            throw ModelDownloadError.invalidMetadata(url.lastPathComponent)
+        }
+
+        return DownloadMetadata(commitHash: commitHash, etag: etag)
+    }
+
+    private func isSha256(_ value: String) -> Bool {
+        let pattern = "^[0-9a-f]{64}$"
+        return value.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private func computeFileHash(file url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        var hasher = SHA256()
+        let chunkSize = 1024 * 1024
+
+        while autoreleasepool(invoking: {
+            let data = try? handle.read(upToCount: chunkSize)
+            guard let data, !data.isEmpty else { return false }
+            hasher.update(data: data)
+            return true
+        }) {}
+
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private struct DownloadMetadata {
+    let commitHash: String
+    let etag: String
+}
+
+enum ModelDownloadError: LocalizedError {
+    case missingMetadata(String)
+    case invalidMetadata(String)
+    case checksumMismatch(String)
+    case validationFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingMetadata(let file):
+            return "Model download validation failed (missing metadata for \(file)). Please re-download."
+        case .invalidMetadata(let file):
+            return "Model download validation failed (invalid metadata for \(file)). Please re-download."
+        case .checksumMismatch(let file):
+            return "Model download validation failed (checksum mismatch for \(file)). Please re-download."
+        case .validationFailed(let message):
+            return "Model download validation failed. \(message)"
+        }
     }
 }
