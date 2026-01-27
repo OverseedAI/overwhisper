@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		2D6A6332D3D90900C616BBF3 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F70BDECC4296C7ABE1FDA0 /* HotkeyManager.swift */; };
+		326B25FB71F5A0B5D2D92C6F /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E48F8B713B09791DAA3D85 /* AppLogger.swift */; };
+		3884CE56321B5124FB9ADBA5 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B981A16BEA9D881C03169846 /* OnboardingView.swift */; };
 		3C20ABADE932477FE5057996 /* TextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AACBA6521305AC62E4D5F08 /* TextInserter.swift */; };
 		45DEEB1F5F15330C4CBBF295 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0EF1327337992F9B5CA01B /* AudioRecorder.swift */; };
 		70FA1EA74756D7D320D285E1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = FCE79557B30B53B7AB17AE32 /* Sparkle */; };
@@ -21,6 +23,7 @@
 		CD6A803C535173D80F3D6A95 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B6842920F60C2FDB7C2A90 /* SettingsView.swift */; };
 		D75547085B767313847F6087 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B86856C6E8DC1C1CA79D95 /* AppDelegate.swift */; };
 		F1C779843DB0F9688645B2AB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC1285E3693B5BA33093458 /* AppState.swift */; };
+		F283BF9CA8504FC7868F12F4 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57BF6ECF1ED279820E71105 /* CrashReporter.swift */; };
 		F3ECD59AC8E30F99135B602A /* OpenAIEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D26A49BA97420C7B9784D5 /* OpenAIEngine.swift */; };
 		F4FBBD24A0D5C59BC28CB4F3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 785617F77BB6DE5884349534 /* Assets.xcassets */; };
 		FC7D8D4477FD031D2A453779 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 756F6B9208C887A594813A6B /* ModelManager.swift */; };
@@ -37,9 +40,12 @@
 		82812CE441C897C9A14857B0 /* Overwhisper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Overwhisper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8AC1285E3693B5BA33093458 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		AA0EF1327337992F9B5CA01B /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
+		B0E48F8B713B09791DAA3D85 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
 		B2AB0D6F62E0EBA98666314F /* OverwhisperApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverwhisperApp.swift; sourceTree = "<group>"; };
+		B981A16BEA9D881C03169846 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D84D3ACF14A29AD5B7BF37B1 /* OverlayWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindow.swift; sourceTree = "<group>"; };
 		E2D26A49BA97420C7B9784D5 /* OpenAIEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIEngine.swift; sourceTree = "<group>"; };
+		E57BF6ECF1ED279820E71105 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
 		E5F70BDECC4296C7ABE1FDA0 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		F33FBAA55580AA9161076B3F /* OverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -64,6 +70,7 @@
 				6C16798A265046D7C1CBE4C2 /* App */,
 				666B404F3B61FC08DF9A9926 /* Audio */,
 				4159F7B8F187D387FCD37D9E /* Hotkey */,
+				7B059AAD09174247ABA39E37 /* Logging */,
 				4D1472BA03F0C222D701B2F1 /* Output */,
 				E8F690F0870678DFB8FF7F66 /* Resources */,
 				A9E5F2FCFA0864293136A3E2 /* Transcription */,
@@ -91,6 +98,7 @@
 		4742A831018C0DF023154BFE /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				B981A16BEA9D881C03169846 /* OnboardingView.swift */,
 				F33FBAA55580AA9161076B3F /* OverlayView.swift */,
 				D84D3ACF14A29AD5B7BF37B1 /* OverlayWindow.swift */,
 				27B6842920F60C2FDB7C2A90 /* SettingsView.swift */,
@@ -119,9 +127,18 @@
 			children = (
 				11B86856C6E8DC1C1CA79D95 /* AppDelegate.swift */,
 				8AC1285E3693B5BA33093458 /* AppState.swift */,
+				E57BF6ECF1ED279820E71105 /* CrashReporter.swift */,
 				B2AB0D6F62E0EBA98666314F /* OverwhisperApp.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		7B059AAD09174247ABA39E37 /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				B0E48F8B713B09791DAA3D85 /* AppLogger.swift */,
+			);
+			path = Logging;
 			sourceTree = "<group>";
 		};
 		A9655F50E434AEEB255A265D /* Products */ = {
@@ -239,10 +256,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				D75547085B767313847F6087 /* AppDelegate.swift in Sources */,
+				326B25FB71F5A0B5D2D92C6F /* AppLogger.swift in Sources */,
 				F1C779843DB0F9688645B2AB /* AppState.swift in Sources */,
 				45DEEB1F5F15330C4CBBF295 /* AudioRecorder.swift in Sources */,
+				F283BF9CA8504FC7868F12F4 /* CrashReporter.swift in Sources */,
 				2D6A6332D3D90900C616BBF3 /* HotkeyManager.swift in Sources */,
 				FC7D8D4477FD031D2A453779 /* ModelManager.swift in Sources */,
+				3884CE56321B5124FB9ADBA5 /* OnboardingView.swift in Sources */,
 				F3ECD59AC8E30F99135B602A /* OpenAIEngine.swift in Sources */,
 				7D180EF2BEA910E301CCFF11 /* OverlayView.swift in Sources */,
 				A5CC058DCB44FF020BCAA97B /* OverlayWindow.swift in Sources */,
