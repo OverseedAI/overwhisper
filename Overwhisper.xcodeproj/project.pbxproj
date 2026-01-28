@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A2B3C4D5E6F7A8B9C0D1E2F /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* MenuBarIcon.swift */; };
 		2D6A6332D3D90900C616BBF3 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F70BDECC4296C7ABE1FDA0 /* HotkeyManager.swift */; };
 		326B25FB71F5A0B5D2D92C6F /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E48F8B713B09791DAA3D85 /* AppLogger.swift */; };
 		3884CE56321B5124FB9ADBA5 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B981A16BEA9D881C03169846 /* OnboardingView.swift */; };
@@ -31,6 +32,7 @@
 
 /* Begin PBXFileReference section */
 		11B86856C6E8DC1C1CA79D95 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		27B6842920F60C2FDB7C2A90 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		27FA5B6D32A74360C3778DFC /* TranscriptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionEngine.swift; sourceTree = "<group>"; };
 		3F51FC25B877C421AA6475AC /* WhisperKitEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitEngine.swift; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
 		4742A831018C0DF023154BFE /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* MenuBarIcon.swift */,
 				B981A16BEA9D881C03169846 /* OnboardingView.swift */,
 				F33FBAA55580AA9161076B3F /* OverlayView.swift */,
 				D84D3ACF14A29AD5B7BF37B1 /* OverlayWindow.swift */,
@@ -261,6 +264,7 @@
 				45DEEB1F5F15330C4CBBF295 /* AudioRecorder.swift in Sources */,
 				F283BF9CA8504FC7868F12F4 /* CrashReporter.swift in Sources */,
 				2D6A6332D3D90900C616BBF3 /* HotkeyManager.swift in Sources */,
+				1A2B3C4D5E6F7A8B9C0D1E2F /* MenuBarIcon.swift in Sources */,
 				FC7D8D4477FD031D2A453779 /* ModelManager.swift in Sources */,
 				3884CE56321B5124FB9ADBA5 /* OnboardingView.swift in Sources */,
 				F3ECD59AC8E30F99135B602A /* OpenAIEngine.swift in Sources */,
