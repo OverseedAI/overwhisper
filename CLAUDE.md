@@ -21,9 +21,22 @@ For Xcode: `open Package.swift` or `open Overwhisper.xcodeproj`
 
 ## Releasing
 
-```bash
-./scripts/bump-version.sh 1.0.24   # Updates version, commits, tags, pushes
-```
+When asked to "push to prod", "bump a release", or similar:
+
+1. **Check changes since last release**:
+   ```bash
+   git describe --tags --abbrev=0   # Get last tag
+   git log --oneline $(git describe --tags --abbrev=0)..HEAD
+   ```
+
+2. **Decide version bump type** (semver: MAJOR.MINOR.PATCH):
+   - **PATCH** (1.0.x): Bug fixes, minor tweaks, no new features
+   - **MINOR** (1.x.0): New features, significant improvements, non-breaking changes
+
+3. **Run the release script**:
+   ```bash
+   ./scripts/bump-version.sh X.Y.Z   # Updates version, commits, tags, pushes
+   ```
 
 This triggers the GitHub Actions workflow to build, notarize, and release a DMG.
 

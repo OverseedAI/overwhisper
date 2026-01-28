@@ -29,6 +29,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
     private var escapeKeyMonitor: Any?
+    private var iconAnimationTimer: Timer?
+    private var iconAnimationFrame: Int = 0
+    private var isLoadingAnimation: Bool = false
 
     override init() {
         // Initialize Sparkle updater
@@ -90,8 +93,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Overwhisper")
-            button.image?.isTemplate = true
+            button.image = MenuBarIcon.create()
         }
 
         let menu = NSMenu()
@@ -268,14 +270,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch state {
         case .idle:
-            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Idle")
+            stopIconAnimation()
+            button.image = MenuBarIcon.create()
         case .recording:
-            button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Recording")
+            startIconAnimation()
         case .transcribing:
-            button.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Transcribing")
+            stopIconAnimation()
+            button.image = MenuBarIcon.createTranscribing()
         case .error:
-            button.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Error")
+            stopIconAnimation()
+            button.image = MenuBarIcon.createError()
         }
+    }
+
+    private func startIconAnimation(forLoading: Bool = false) {
+        stopIconAnimation()
+        iconAnimationFrame = 0
+        isLoadingAnimation = forLoading
+
+        // Update icon immediately
+        if let button = statusItem.button {
+            button.image = forLoading
+                ? MenuBarIcon.createLoadingFrame(iconAnimationFrame)
+                : MenuBarIcon.createRecordingFrame(iconAnimationFrame)
+        }
+
+        // Animate - slower for loading (pulse), faster for recording
+        let interval: TimeInterval = forLoading ? 0.3 : 0.15
+        iconAnimationTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let button = self.statusItem.button else { return }
+                self.iconAnimationFrame += 1
+                button.image = self.isLoadingAnimation
+                    ? MenuBarIcon.createLoadingFrame(self.iconAnimationFrame)
+                    : MenuBarIcon.createRecordingFrame(self.iconAnimationFrame)
+            }
+        }
+    }
+
+    private func stopIconAnimation() {
+        iconAnimationTimer?.invalidate()
+        iconAnimationTimer = nil
+        isLoadingAnimation = false
     }
 
     private func updateMenu(for state: RecordingState) {
@@ -316,17 +352,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateInitializingState(_ isInitializing: Bool) {
-        guard let button = statusItem.button,
-              let menu = statusItem.menu,
+        guard let menu = statusItem.menu,
               menu.items.count > 2 else { return }
         guard let recordingItem = recordingMenuItem else { return }
 
         if isInitializing {
-            button.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "Loading Model")
-            button.contentTintColor = nil
+            startIconAnimation(forLoading: true)
             recordingItem.title = "Loading Model..."
             recordingItem.isEnabled = false
         } else {
+            stopIconAnimation()
             // Restore based on current recording state
             updateStatusIcon(for: appState.recordingState)
             updateMenu(for: appState.recordingState)
