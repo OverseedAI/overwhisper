@@ -558,12 +558,11 @@ import ServiceManagement
 enum SystemAudioManager {
     private static var wasSystemMuted = false
     private static var previousVolume: Int = 0
-    private static var supportChecked = false
-    private static var isSupported = false
+    private static var usedVolumeFallback = false
 
     static func muteSystemAudio() {
-        // Check if volume control is supported
-        guard checkSupport() else {
+        // Check if volume control is supported (re-check each time in case audio device changed)
+        guard let currentVolume = getSystemVolume() else {
             AppLogger.system.warning("System audio volume control not supported on current audio device")
             return
         }
@@ -571,66 +570,51 @@ enum SystemAudioManager {
         // First, check if already muted
         if let muted = isSystemMuted(), muted {
             wasSystemMuted = true
+            usedVolumeFallback = false
             AppLogger.system.info("System already muted")
             return
         }
 
         wasSystemMuted = false
+        previousVolume = currentVolume
 
         // Try mute command first
-        if setSystemMuted(true) {
+        _ = setSystemMuted(true)
+
+        // Verify it actually worked - some devices silently ignore the mute command
+        if let muted = isSystemMuted(), muted {
+            usedVolumeFallback = false
             AppLogger.system.info("Muted using mute command")
             return
         }
 
         // Fallback: set volume to 0
-        if let currentVolume = getSystemVolume() {
-            previousVolume = currentVolume
-            if setSystemVolume(0) {
-                AppLogger.system.info("Muted by setting volume to 0 (was \(previousVolume))")
-            }
+        if setSystemVolume(0) {
+            usedVolumeFallback = true
+            AppLogger.system.info("Muted by setting volume to 0 (was \(previousVolume))")
         }
     }
 
     static func restoreSystemAudio() {
-        guard checkSupport() else {
-            return
-        }
-
         if wasSystemMuted {
             AppLogger.system.info("System was muted before recording, not restoring")
             return
         }
 
-        // Try unmute command first
-        if setSystemMuted(false) {
-            AppLogger.system.info("Unmuted using mute command")
+        // If we used volume fallback, restore volume
+        if usedVolumeFallback {
+            if previousVolume > 0 {
+                if setSystemVolume(previousVolume) {
+                    AppLogger.system.info("Restored volume to \(previousVolume)")
+                }
+            }
             return
         }
 
-        // Fallback: restore previous volume
-        if previousVolume > 0 {
-            if setSystemVolume(previousVolume) {
-                AppLogger.system.info("Restored volume to \(previousVolume)")
-            }
+        // Try unmute command
+        if setSystemMuted(false) {
+            AppLogger.system.info("Unmuted using mute command")
         }
-    }
-
-    private static func checkSupport() -> Bool {
-        if supportChecked {
-            return isSupported
-        }
-        supportChecked = true
-
-        // Try to get the current volume - if it returns nil, volume control is not supported
-        if let volume = getSystemVolume() {
-            isSupported = true
-            AppLogger.system.debug("Volume control supported (current volume: \(volume))")
-        } else {
-            isSupported = false
-            AppLogger.system.warning("Volume control not supported (external audio interface?)")
-        }
-        return isSupported
     }
 
     private static func isSystemMuted() -> Bool? {
