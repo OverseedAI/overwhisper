@@ -452,6 +452,26 @@ class AppState: ObservableObject {
         lastTranscription = ""
     }
 
+    func resetToDefaults() {
+        recordingMode = .toggle
+        overlayPosition = .bottomRight
+        transcriptionEngine = .whisperKit
+        whisperModel = .smallEn
+        language = "auto"
+        enableCloudFallback = false
+        playSoundOnCompletion = true
+        playSoundOnStart = false
+        showNotificationOnError = true
+        muteSystemAudioWhileRecording = false
+        selectedInputDeviceUID = ""
+        recordingDurationLimitEnabled = false
+        recordingDurationLimitSeconds = 60
+        startAtLogin = false
+        toggleHotkeyConfig = .defaultToggle
+        pushToTalkHotkeyConfig = .defaultPushToTalk
+        debugModeEnabled = false
+    }
+
     private func persistTranscriptionHistory() {
         if let data = try? JSONEncoder().encode(transcriptionHistory) {
             UserDefaults.standard.set(data, forKey: transcriptionHistoryKey)

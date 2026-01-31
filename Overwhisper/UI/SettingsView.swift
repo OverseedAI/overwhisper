@@ -39,6 +39,7 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
+    @State private var showResetConfirmation = false
 
     var body: some View {
         Form {
@@ -94,6 +95,19 @@ struct GeneralSettingsView: View {
 
             Section("Advanced") {
                 Toggle("Debug Mode", isOn: $appState.debugModeEnabled)
+
+                Button("Reset All Settings to Defaults") {
+                    showResetConfirmation = true
+                }
+                .foregroundColor(.red)
+            }
+            .alert("Reset to Defaults", isPresented: $showResetConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset", role: .destructive) {
+                    appState.resetToDefaults()
+                }
+            } message: {
+                Text("This will reset all settings including hotkeys to their default values. Your API key and transcription history will be preserved.")
             }
 
             Section {
