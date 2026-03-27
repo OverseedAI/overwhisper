@@ -264,6 +264,61 @@ class ModelManager: ObservableObject {
         return downloadedModels.contains(modelName)
     }
 
+    /// Returns the on-disk folder path for a cached model, or nil if not found.
+    func findModelFolder(for modelName: String) -> String? {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+
+        let possiblePaths = [
+            appSupport.appendingPathComponent("MacWhisper/models/whisperkit/models/argmaxinc/whisperkit-coreml"),
+            appSupport.appendingPathComponent("superwhisper/models/argmaxinc/whisperkit-coreml"),
+            homeDir.appendingPathComponent("Documents/huggingface/models/argmaxinc/whisperkit-coreml"),
+            appSupport.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml"),
+            modelsDirectory
+        ]
+
+        // Check direct paths (e.g. .../openai_whisper-small.en/)
+        for basePath in possiblePaths {
+            guard let contents = try? FileManager.default.contentsOfDirectory(at: basePath, includingPropertiesForKeys: nil) else { continue }
+            for url in contents where url.hasDirectoryPath {
+                let name = url.lastPathComponent
+                if name.starts(with: "openai_whisper-") {
+                    let rawName = String(name.dropFirst("openai_whisper-".count))
+                    if extractBaseModelName(rawName) == modelName {
+                        return url.path
+                    }
+                } else if name == modelName {
+                    return url.path
+                }
+            }
+        }
+
+        // Check huggingface hub cache (snapshots)
+        let hubCachePath = homeDir.appendingPathComponent(".cache/huggingface/hub")
+        if let repoDirs = try? FileManager.default.contentsOfDirectory(at: hubCachePath, includingPropertiesForKeys: nil) {
+            for repoDir in repoDirs where repoDir.lastPathComponent.contains("whisperkit-coreml") {
+                let snapshotsPath = repoDir.appendingPathComponent("snapshots")
+                if let snapshots = try? FileManager.default.contentsOfDirectory(at: snapshotsPath, includingPropertiesForKeys: nil) {
+                    for snapshot in snapshots where snapshot.hasDirectoryPath {
+                        if let modelDirs = try? FileManager.default.contentsOfDirectory(at: snapshot, includingPropertiesForKeys: nil) {
+                            for modelDir in modelDirs where modelDir.hasDirectoryPath {
+                                let dirName = modelDir.lastPathComponent
+                                if dirName.starts(with: "openai_whisper-") {
+                                    let rawName = String(dirName.dropFirst("openai_whisper-".count))
+                                    if extractBaseModelName(rawName) == modelName {
+                                        return modelDir.path
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return nil
+    }
+
     func availableModels() -> [WhisperModel] {
         return WhisperModel.allCases
     }

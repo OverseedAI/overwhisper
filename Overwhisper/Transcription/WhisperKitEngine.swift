@@ -37,7 +37,12 @@ actor WhisperKitEngine: TranscriptionEngine {
         AppLogger.transcription.info("Initializing WhisperKit with model: \(modelName)")
 
         // Check if model is already downloaded locally to avoid network dependency
-        let modelAlreadyDownloaded = await appState.downloadedModels.contains(modelName)
+        let cachedModelFolder = await modelManager.findModelFolder(for: modelName)
+        let modelAlreadyDownloaded = cachedModelFolder != nil
+
+        if let folder = cachedModelFolder {
+            AppLogger.transcription.info("Using cached model at: \(folder)")
+        }
 
         for attempt in 1...Self.maxRetries {
             do {
@@ -47,6 +52,7 @@ actor WhisperKitEngine: TranscriptionEngine {
 
                 whisperKit = try await WhisperKit(
                     model: modelName,
+                    modelFolder: cachedModelFolder,
                     computeOptions: ModelComputeOptions(
                         audioEncoderCompute: .cpuAndNeuralEngine,
                         textDecoderCompute: .cpuAndNeuralEngine
