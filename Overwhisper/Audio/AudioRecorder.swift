@@ -209,6 +209,7 @@ class AudioDeviceManager: ObservableObject {
     }
 }
 
+@MainActor
 class AudioRecorder: ObservableObject {
     private var audioEngine = AVAudioEngine()
     private var audioFile: AVAudioFile?
@@ -219,11 +220,28 @@ class AudioRecorder: ObservableObject {
 
     @Published var currentLevel: Float = 0.0
     @Published var isRecording: Bool = false
+    @Published var isVoiceDetected: Bool = false
 
     private let sampleRate: Double = 16000  // Whisper optimal
     private let channels: AVAudioChannelCount = 1  // Mono
 
     private var levelUpdateTimer: Timer?
+    
+    // MARK: - Silence Detection
+    private var silenceStartTime: Date?
+    private var silenceThreshold: Float = 0.05  // Normalized level threshold
+    var silenceTimeout: TimeInterval = 3.0
+    var onSilenceDetected: (() -> Void)?
+    var isSilenceDetectionEnabled: Bool = false
+    
+    // MARK: - Voice Activity Detection (VAD)
+    private var consecutiveVoiceFrames: Int = 0
+    private var consecutiveSilenceFrames: Int = 0
+    private let vadVoiceThreshold: Float = 0.1  // Threshold for voice detection
+    private let vadRequiredVoiceFrames: Int = 3  // Frames required to confirm voice
+    private let vadRequiredSilenceFrames: Int = 10  // Frames required to confirm silence
+    var isVADEnabled: Bool = false
+    var onVoiceActivity: ((Bool) -> Void)?
 
     init() {}
 
@@ -314,6 +332,9 @@ class AudioRecorder: ObservableObject {
         audioEngine.prepare()
         try audioEngine.start()
         isRecording = true
+        
+        // Record for crash recovery
+        CrashRecovery.shared.recordRecordingStarted(url: url)
 
         // Start level monitoring
         startLevelMonitoring()
@@ -356,9 +377,11 @@ class AudioRecorder: ObservableObject {
         let frameLength = Int(buffer.frameLength)
 
         var sum: Float = 0
+        var peak: Float = 0
         for i in 0..<frameLength {
-            let sample = channelData[i]
+            let sample = abs(channelData[i])
             sum += sample * sample
+            peak = max(peak, sample)
         }
 
         let rms = sqrt(sum / Float(frameLength))
@@ -366,9 +389,61 @@ class AudioRecorder: ObservableObject {
 
         // Normalize to 0-1 range (using -40dB to 0dB range for less sensitivity)
         let normalizedLevel = max(0, min(1, (level + 40) / 40))
+        
+        // VAD (Voice Activity Detection)
+        let hasVoice = normalizedLevel > vadVoiceThreshold
+        updateVAD(hasVoice: hasVoice)
+        
+        // Silence Detection
+        if isSilenceDetectionEnabled {
+            updateSilenceDetection(level: normalizedLevel)
+        }
 
         DispatchQueue.main.async { [weak self] in
             self?.currentLevel = normalizedLevel
+        }
+    }
+    
+    private func updateVAD(hasVoice: Bool) {
+        if hasVoice {
+            consecutiveVoiceFrames += 1
+            consecutiveSilenceFrames = 0
+            
+            if consecutiveVoiceFrames >= vadRequiredVoiceFrames && !isVoiceDetected {
+                isVoiceDetected = true
+                onVoiceActivity?(true)
+            }
+        } else {
+            consecutiveSilenceFrames += 1
+            consecutiveVoiceFrames = 0
+            
+            if consecutiveSilenceFrames >= vadRequiredSilenceFrames && isVoiceDetected {
+                isVoiceDetected = false
+                onVoiceActivity?(false)
+            }
+        }
+    }
+    
+    private func updateSilenceDetection(level: Float) {
+        let now = Date()
+        
+        if level < silenceThreshold {
+            // Silence detected
+            if silenceStartTime == nil {
+                silenceStartTime = now
+            } else if let startTime = silenceStartTime {
+                let silenceDuration = now.timeIntervalSince(startTime)
+                if silenceDuration >= silenceTimeout {
+                    // Trigger silence detection callback
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onSilenceDetected?()
+                    }
+                    silenceStartTime = nil  // Reset to prevent multiple triggers
+                }
+            }
+        } else {
+            // Voice detected, reset silence timer
+            silenceStartTime = nil
         }
     }
 
@@ -400,11 +475,15 @@ class AudioRecorder: ObservableObject {
 
         isRecording = false
         currentLevel = 0
+        resetVADAndSilenceState()
 
         // Verify the file was created
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw AudioRecorderError.failedToCreateFile
         }
+        
+        // Clear crash recovery data
+        CrashRecovery.shared.recordRecordingEnded()
 
         return url
     }
@@ -429,6 +508,20 @@ class AudioRecorder: ObservableObject {
         isRecording = false
         currentLevel = 0
         recordingURL = nil
+        resetVADAndSilenceState()
+        
+        // Clear crash recovery data
+        CrashRecovery.shared.recordRecordingEnded()
+    }
+    
+    private func resetVADAndSilenceState() {
+        // Reset VAD state
+        consecutiveVoiceFrames = 0
+        consecutiveSilenceFrames = 0
+        isVoiceDetected = false
+        
+        // Reset silence detection state
+        silenceStartTime = nil
     }
 
     /// Resets the audio engine after system wake or audio route changes.
@@ -450,8 +543,9 @@ class AudioRecorder: ObservableObject {
         recordingURL = nil
         converter = nil
         converterInputFormat = nil
+        resetVADAndSilenceState()
 
-        if let selectedInputDeviceID {
+        if selectedInputDeviceID != nil {
             try? applyInputDevice()
         }
     }

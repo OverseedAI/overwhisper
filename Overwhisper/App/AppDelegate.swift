@@ -5,6 +5,11 @@ import Combine
 import UserNotifications
 import Sparkle
 
+// Notification name for stopping recording from overlay
+extension Notification.Name {
+    static let stopRecording = Notification.Name("stopRecording")
+}
+
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
@@ -23,6 +28,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingMenuItem: NSMenuItem?
     private var errorSeparatorItem: NSMenuItem?
     private var errorMenuItem: NSMenuItem?
+    private var downloadProgressMenuItem: NSMenuItem?
+    private var downloadSeparatorItem: NSMenuItem?
     private var onboardingWindow: NSWindow?
     private var recordingLimitTimer: Timer?
 
@@ -53,9 +60,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         showOnboardingIfNeeded()
 
+        // Initialize cache management
+        CacheManager.shared.schedulePeriodicCleanup()
+        
+        // Check for crashed recordings
+        checkForCrashedRecording()
+
         // Initialize transcription engine
         Task {
             await initializeTranscriptionEngine()
+        }
+    }
+    
+    private func checkForCrashedRecording() {
+        Task {
+            if let recoveredURL = await CrashRecovery.shared.recoverCrashedRecording() {
+                // Show notification about recovered recording
+                showNotification(
+                    title: "Recording Recovered",
+                    body: "A recording from before the crash was recovered. Transcribing now..."
+                )
+                
+                // Automatically transcribe the recovered recording
+                await transcribeRecoveredAudio(url: recoveredURL)
+            }
+        }
+    }
+    
+    private func transcribeRecoveredAudio(url: URL) async {
+        guard let engine = transcriptionEngine else { return }
+        
+        do {
+            let text = try await engine.transcribe(audioURL: url)
+            
+            if !text.isEmpty {
+                appState.addTranscriptionHistory(text)
+                textInserter.insertText(text)
+                
+                if appState.copyToClipboard {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+                
+                showNotification(title: "Recovered", body: "Recovered transcription completed.")
+            }
+            
+            // Clean up the recovered file
+            try? FileManager.default.removeItem(at: url)
+        } catch {
+            AppLogger.transcription.error("Failed to transcribe recovered audio: \(error.localizedDescription)")
+            showNotification(title: "Recovery Failed", body: "Could not transcribe recovered recording.")
         }
     }
 
@@ -125,6 +179,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(errorItem)
         self.errorMenuItem = errorItem
 
+        let downloadSeparator = NSMenuItem.separator()
+        downloadSeparator.isHidden = true
+        menu.addItem(downloadSeparator)
+        self.downloadSeparatorItem = downloadSeparator
+
+        let downloadProgressItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        downloadProgressItem.isEnabled = false
+        downloadProgressItem.isHidden = true
+        menu.addItem(downloadProgressItem)
+        self.downloadProgressMenuItem = downloadProgressItem
+
         menu.addItem(NSMenuItem.separator())
 
         let updateItem = NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "")
@@ -156,6 +221,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupBindings() {
+        // Listen for stop recording notification from overlay
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleStopRecordingNotification),
+            name: .stopRecording,
+            object: nil
+        )
+
         // Update menu bar icon based on state
         appState.$recordingState
             .receive(on: DispatchQueue.main)
@@ -260,6 +333,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateInitializingState(isInitializing)
             }
             .store(in: &cancellables)
+
+        // Update download progress in menu bar
+        Publishers.CombineLatest(appState.$isDownloadingModel, appState.$modelDownloadProgress)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isDownloading, progress in
+                self?.updateDownloadProgressMenuItem(isDownloading: isDownloading, progress: progress)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func updateDownloadProgressMenuItem(isDownloading: Bool, progress: Double) {
+        guard let downloadProgressItem = downloadProgressMenuItem,
+              let downloadSeparator = downloadSeparatorItem else { return }
+        
+        if isDownloading, let modelName = appState.currentlyDownloadingModel {
+            let percentage = Int(progress * 100)
+            downloadProgressItem.title = "Downloading \(modelName): \(percentage)%"
+            downloadProgressItem.isHidden = false
+            downloadSeparator.isHidden = false
+        } else {
+            downloadProgressItem.isHidden = true
+            downloadSeparator.isHidden = true
+        }
     }
 
     private func updateStatusIcon(for state: RecordingState) {
@@ -404,6 +500,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let onboardingView = OnboardingView(
+            modelManager: modelManager,
             openAppSettings: { [weak self] in
                 self?.openSettings()
             },
@@ -505,6 +602,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func handleStopRecordingNotification() {
+        if appState.recordingState == .recording {
+            stopAndTranscribe()
+        }
+    }
+
     private func startRecording() {
         guard appState.recordingState.isIdle else { return }
 
@@ -522,6 +625,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
         }
+
+        // Show tutorial on first recording
+        let hasSeenTutorial = UserDefaults.standard.bool(forKey: "hasSeenTutorial")
+        if !hasSeenTutorial {
+            TutorialManager.shared.showTutorial(position: appState.overlayPosition) { [weak self] in
+                self?.startRecordingAfterTutorial()
+            }
+            return
+        }
+
+        startRecordingAfterTutorial()
+    }
+
+    private func configureSmartFeatures() {
+        // Configure silence detection
+        audioRecorder.isSilenceDetectionEnabled = appState.autoDetectSilence
+        audioRecorder.silenceTimeout = appState.silenceTimeoutSeconds
+        audioRecorder.onSilenceDetected = { [weak self] in
+            DispatchQueue.main.async {
+                self?.showNotification(title: "Recording Stopped", body: "Silence detected - recording auto-stopped.")
+                self?.stopAndTranscribe()
+            }
+        }
+        
+        // Configure VAD
+        audioRecorder.isVADEnabled = appState.voiceActivityDetection
+        audioRecorder.onVoiceActivity = { [weak self] isActive in
+            // Could update UI to show voice detection status
+            AppLogger.audio.debug("Voice activity: \(isActive)")
+        }
+    }
+
+    private func startRecordingAfterTutorial() {
 
         // Check if OpenAI API key is set when using OpenAI
         if appState.transcriptionEngine == .openAI && appState.openAIAPIKey.isEmpty {
@@ -546,6 +682,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if appState.muteSystemAudioWhileRecording {
                 SystemAudioManager.muteSystemAudio()
             }
+
+            // Configure smart features
+            configureSmartFeatures()
 
             try audioRecorder.startRecording()
             appState.recordingState = .recording
@@ -640,6 +779,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if !text.isEmpty {
                     appState.addTranscriptionHistory(text)
                     let didPaste = textInserter.insertText(text)
+                    
+                    // Copy to clipboard if setting is enabled
+                    if appState.copyToClipboard {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                    }
 
                     if didPaste {
                         if appState.playSoundOnCompletion {
@@ -708,6 +853,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !text.isEmpty {
                 appState.addTranscriptionHistory(text)
                 let didPaste = textInserter.insertText(text)
+                
+                // Copy to clipboard if setting is enabled
+                if appState.copyToClipboard {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+                
                 appState.addDebugLog("Cloud fallback succeeded", source: "Transcription")
 
                 if didPaste {

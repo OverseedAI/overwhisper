@@ -135,6 +135,10 @@ actor WhisperKitEngine: TranscriptionEngine {
             AppLogger.transcription.debug("Custom vocabulary prompt tokens: \(promptTokens?.count ?? 0) tokens")
         }
 
+        // Get smart feature settings
+        let autoPunctuation = await appState.autoPunctuation
+        let profanityFilter = await appState.profanityFilter
+        
         let decodingOptions = DecodingOptions(
             verbose: true,
             task: shouldTranslate ? .translate : .transcribe,
@@ -178,8 +182,82 @@ actor WhisperKitEngine: TranscriptionEngine {
         }
 
         AppLogger.transcription.debug("Transcription result: \(text)")
+        
+        var processedText = text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        
+        // Apply auto-punctuation if enabled
+        if autoPunctuation {
+            processedText = applyAutoPunctuation(to: processedText)
+        }
+        
+        // Apply profanity filter if enabled
+        if profanityFilter {
+            processedText = applyProfanityFilter(to: processedText)
+        }
 
-        return text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        return processedText
+    }
+    
+    private func applyAutoPunctuation(to text: String) -> String {
+        // Simple auto-punctuation: capitalize first letter of sentences
+        var result = text
+        
+        // Capitalize first letter
+        if let firstChar = result.first {
+            result = String(firstChar).uppercased() + result.dropFirst()
+        }
+        
+        // Add period at end if no punctuation
+        if let lastChar = result.last, !".!?".contains(lastChar) {
+            result += "."
+        }
+        
+        // Capitalize after sentence endings
+        let sentenceEndings = [". ", "? ", "! "]
+        for ending in sentenceEndings {
+            result = result.replacingOccurrences(
+                of: ending + "([a-z])",
+                with: ending + "$1",
+                options: .regularExpression,
+                range: nil
+            )
+            // Actually capitalize
+            var newResult = result
+            for (index, char) in result.enumerated() {
+                if index > 1 {
+                    let prevIndex = result.index(result.startIndex, offsetBy: index - 2)
+                    let prevPrevIndex = result.index(result.startIndex, offsetBy: index - 1)
+                    let prevChars = String(result[prevIndex...prevPrevIndex])
+                    if (prevChars == ". " || prevChars == "? " || prevChars == "! ") && char.isLowercase {
+                        let charIndex = result.index(result.startIndex, offsetBy: index)
+                        newResult.replaceSubrange(charIndex...charIndex, with: String(char).uppercased())
+                    }
+                }
+            }
+            result = newResult
+        }
+        
+        return result
+    }
+    
+    private func applyProfanityFilter(to text: String) -> String {
+        // Common profanity words to mask
+        let profanityList = [
+            "damn", "hell", "crap", "stupid", "idiot"
+            // Add more as needed - keeping it minimal for now
+        ]
+        
+        var result = text
+        for word in profanityList {
+            let mask = String(repeating: "*", count: word.count)
+            result = result.replacingOccurrences(
+                of: "\\b\(word)\\b",
+                with: mask,
+                options: [.regularExpression, .caseInsensitive],
+                range: nil
+            )
+        }
+        return result
     }
 }
 

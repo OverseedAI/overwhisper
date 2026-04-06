@@ -9,7 +9,10 @@ struct OverlayView: View {
             case .recording:
                 RecordingView(
                     audioLevel: appState.audioLevel,
-                    duration: appState.recordingDuration
+                    duration: appState.recordingDuration,
+                    onStop: {
+                        NotificationCenter.default.post(name: .stopRecording, object: nil)
+                    }
                 )
             case .transcribing:
                 TranscribingView()
@@ -35,6 +38,7 @@ struct OverlayView: View {
 struct RecordingView: View {
     let audioLevel: Float
     let duration: TimeInterval
+    var onStop: (() -> Void)? = nil
 
     @State private var isPulsing = false
     @State private var ringScale: CGFloat = 1.0
@@ -45,28 +49,34 @@ struct RecordingView: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                // Modern pulsing recording indicator with ring
-                ZStack {
-                    // Outer pulsing ring
-                    Circle()
-                        .stroke(accentColor.opacity(0.3), lineWidth: 2)
-                        .frame(width: 18, height: 18)
-                        .scaleEffect(ringScale)
-                        .opacity(2.0 - ringScale)
+                // Modern pulsing recording indicator with ring - now clickable to stop
+                Button(action: {
+                    onStop?()
+                }) {
+                    ZStack {
+                        // Outer pulsing ring
+                        Circle()
+                            .stroke(accentColor.opacity(0.3), lineWidth: 2)
+                            .frame(width: 18, height: 18)
+                            .scaleEffect(ringScale)
+                            .opacity(2.0 - ringScale)
 
-                    // Inner solid circle
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [accentColor, accentColor.opacity(0.7)],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 6
+                        // Inner solid circle
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [accentColor, accentColor.opacity(0.7)],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: 6
+                                )
                             )
-                        )
-                        .frame(width: 10, height: 10)
-                        .shadow(color: accentColor.opacity(0.6), radius: 4)
+                            .frame(width: 10, height: 10)
+                            .shadow(color: accentColor.opacity(0.6), radius: 4)
+                    }
                 }
+                .buttonStyle(.plain)
+                .help("Click to stop recording")
                 .onAppear {
                     withAnimation(
                         .easeOut(duration: 1.2)

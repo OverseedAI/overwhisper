@@ -29,11 +29,15 @@ struct TranscriptionHistoryEntry: Identifiable, Codable, Equatable {
     let id: UUID
     let timestamp: Date
     let text: String
+    var isFavorite: Bool
+    var tags: [String]
 
-    init(id: UUID = UUID(), timestamp: Date = Date(), text: String) {
+    init(id: UUID = UUID(), timestamp: Date = Date(), text: String, isFavorite: Bool = false, tags: [String] = []) {
         self.id = id
         self.timestamp = timestamp
         self.text = text
+        self.isFavorite = isFavorite
+        self.tags = tags
     }
 }
 
@@ -164,6 +168,8 @@ struct HotkeyConfig: Codable, Equatable {
         var parts: [String] = []
         if modifiers & UInt32(controlKey) != 0 { parts.append("⌃") }
         if modifiers & UInt32(optionKey) != 0 { parts.append("⌥") }
+        // Check for Fn key (kCGEventFlagMaskSecondaryFn = 0x00080000)
+        if modifiers & 0x00080000 != 0 { parts.append("Fn") }
         if modifiers & UInt32(shiftKey) != 0 { parts.append("⇧") }
         if modifiers & UInt32(cmdKey) != 0 { parts.append("⌘") }
 
@@ -297,6 +303,40 @@ class AppState: ObservableObject {
             LaunchAtLogin.isEnabled = startAtLogin
         }
     }
+    @Published var copyToClipboard: Bool {
+        didSet { UserDefaults.standard.set(copyToClipboard, forKey: "copyToClipboard") }
+    }
+    
+    // MARK: - Smart Features
+    @Published var autoDetectSilence: Bool {
+        didSet { UserDefaults.standard.set(autoDetectSilence, forKey: "autoDetectSilence") }
+    }
+    @Published var silenceTimeoutSeconds: Double {
+        didSet { UserDefaults.standard.set(silenceTimeoutSeconds, forKey: "silenceTimeoutSeconds") }
+    }
+    @Published var voiceActivityDetection: Bool {
+        didSet { UserDefaults.standard.set(voiceActivityDetection, forKey: "voiceActivityDetection") }
+    }
+    @Published var autoPunctuation: Bool {
+        didSet { UserDefaults.standard.set(autoPunctuation, forKey: "autoPunctuation") }
+    }
+    @Published var profanityFilter: Bool {
+        didSet { UserDefaults.standard.set(profanityFilter, forKey: "profanityFilter") }
+    }
+    
+    // MARK: - Transcription History Settings
+    @Published var autoSaveToFile: Bool {
+        didSet { 
+            UserDefaults.standard.set(autoSaveToFile, forKey: "autoSaveToFile")
+            if autoSaveToFile { setupDailyLogFile() }
+        }
+    }
+    @Published var autoSaveDirectory: String {
+        didSet { UserDefaults.standard.set(autoSaveDirectory, forKey: "autoSaveDirectory") }
+    }
+    @Published var historySearchQuery: String = ""
+    @Published var showOnlyFavorites: Bool = false
+    
     @Published var hasCompletedOnboarding: Bool {
         didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
     }
@@ -361,8 +401,13 @@ class AppState: ObservableObject {
         let engineStr = UserDefaults.standard.string(forKey: "transcriptionEngine") ?? TranscriptionEngineType.whisperKit.rawValue
         self.transcriptionEngine = TranscriptionEngineType(rawValue: engineStr) ?? .whisperKit
 
-        let modelStr = UserDefaults.standard.string(forKey: "whisperModel") ?? WhisperModel.smallEn.rawValue
-        self.whisperModel = WhisperModel(rawValue: modelStr) ?? .smallEn
+        let modelStr = UserDefaults.standard.string(forKey: "whisperModel")
+        if let savedModel = modelStr, let model = WhisperModel(rawValue: savedModel) {
+            self.whisperModel = model
+        } else {
+            // Auto-detect best model based on system specs
+            self.whisperModel = SystemInfo.getRecommendedModel()
+        }
 
         self.language = UserDefaults.standard.string(forKey: "language") ?? "auto"
         self.translateToEnglish = UserDefaults.standard.bool(forKey: "translateToEnglish")
@@ -385,6 +430,19 @@ class AppState: ObservableObject {
         let storedLimit = UserDefaults.standard.integer(forKey: "recordingDurationLimitSeconds")
         self.recordingDurationLimitSeconds = storedLimit > 0 ? storedLimit : 60
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
+        self.copyToClipboard = UserDefaults.standard.object(forKey: "copyToClipboard") as? Bool ?? true
+        
+        // Smart Features defaults
+        self.autoDetectSilence = UserDefaults.standard.object(forKey: "autoDetectSilence") as? Bool ?? false
+        self.silenceTimeoutSeconds = UserDefaults.standard.object(forKey: "silenceTimeoutSeconds") as? Double ?? 3.0
+        self.voiceActivityDetection = UserDefaults.standard.object(forKey: "voiceActivityDetection") as? Bool ?? false
+        self.autoPunctuation = UserDefaults.standard.object(forKey: "autoPunctuation") as? Bool ?? true
+        self.profanityFilter = UserDefaults.standard.object(forKey: "profanityFilter") as? Bool ?? false
+        
+        // Transcription History defaults
+        self.autoSaveToFile = UserDefaults.standard.object(forKey: "autoSaveToFile") as? Bool ?? false
+        self.autoSaveDirectory = UserDefaults.standard.string(forKey: "autoSaveDirectory") ?? ""
+        
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
         // Load toggle hotkey (with migration from legacy hotkeyConfig)
@@ -449,6 +507,9 @@ class AppState: ObservableObject {
         guard !text.isEmpty else { return }
         let entry = TranscriptionHistoryEntry(text: text)
         transcriptionHistory.insert(entry, at: 0)
+        
+        // Auto-save to file if enabled
+        autoSaveTranscription(text)
         if transcriptionHistory.count > maxTranscriptionHistory {
             transcriptionHistory = Array(transcriptionHistory.prefix(maxTranscriptionHistory))
         }
@@ -464,7 +525,7 @@ class AppState: ObservableObject {
         recordingMode = .toggle
         overlayPosition = .bottomRight
         transcriptionEngine = .whisperKit
-        whisperModel = .smallEn
+        whisperModel = SystemInfo.getRecommendedModel()
         language = "auto"
         translateToEnglish = false
         enableCloudFallback = false
@@ -477,12 +538,108 @@ class AppState: ObservableObject {
         recordingDurationLimitEnabled = false
         recordingDurationLimitSeconds = 60
         startAtLogin = false
+        copyToClipboard = true
+        autoDetectSilence = false
+        silenceTimeoutSeconds = 3.0
+        voiceActivityDetection = false
+        autoPunctuation = true
+        profanityFilter = false
+        autoSaveToFile = false
+        autoSaveDirectory = ""
         toggleHotkeyConfig = .defaultToggle
         pushToTalkHotkeyConfig = .defaultPushToTalk
         debugModeEnabled = false
     }
+    
+    // MARK: - Filtered History
+    var filteredTranscriptionHistory: [TranscriptionHistoryEntry] {
+        var result = transcriptionHistory
+        
+        // Filter by favorites if enabled
+        if showOnlyFavorites {
+            result = result.filter { $0.isFavorite }
+        }
+        
+        // Filter by search query
+        if !historySearchQuery.isEmpty {
+            let query = historySearchQuery.lowercased()
+            result = result.filter { entry in
+                entry.text.lowercased().contains(query) ||
+                entry.tags.contains(where: { $0.lowercased().contains(query) })
+            }
+        }
+        
+        return result
+    }
+    
+    // MARK: - Transcription History Actions
+    func toggleFavorite(for entryId: UUID) {
+        if let index = transcriptionHistory.firstIndex(where: { $0.id == entryId }) {
+            transcriptionHistory[index].isFavorite.toggle()
+            persistTranscriptionHistory()
+        }
+    }
+    
+    func addTag(_ tag: String, to entryId: UUID) {
+        if let index = transcriptionHistory.firstIndex(where: { $0.id == entryId }) {
+            if !transcriptionHistory[index].tags.contains(tag) {
+                transcriptionHistory[index].tags.append(tag)
+                persistTranscriptionHistory()
+            }
+        }
+    }
+    
+    func removeTag(_ tag: String, from entryId: UUID) {
+        if let index = transcriptionHistory.firstIndex(where: { $0.id == entryId }) {
+            transcriptionHistory[index].tags.removeAll { $0 == tag }
+            persistTranscriptionHistory()
+        }
+    }
+    
+    // MARK: - Auto-save to file
+    private func setupDailyLogFile() {
+        // Directory setup happens when saving
+    }
+    
+    func autoSaveTranscription(_ text: String) {
+        guard autoSaveToFile, !text.isEmpty else { return }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateString = dateFormatter.string(from: Date())
+        
+        let fileName = "Overwhisper_\(dateString).txt"
+        
+        let directory: URL
+        if autoSaveDirectory.isEmpty {
+            directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        } else {
+            directory = URL(fileURLWithPath: autoSaveDirectory)
+        }
+        
+        let fileURL = directory.appendingPathComponent(fileName)
+        
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm:ss"
+        let timeString = timeFormatter.string(from: Date())
+        
+        let entry = "[\(timeString)] \(text)\n\n"
+        
+        do {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                let handle = try FileHandle(forWritingTo: fileURL)
+                handle.seekToEndOfFile()
+                handle.write(entry.data(using: .utf8)!)
+                handle.closeFile()
+            } else {
+                try entry.write(to: fileURL, atomically: true, encoding: .utf8)
+            }
+        } catch {
+            AppLogger.system.error("Failed to auto-save transcription: \(error.localizedDescription)")
+        }
+    }
 
-    private func persistTranscriptionHistory() {
+    func persistTranscriptionHistory() {
         if let data = try? JSONEncoder().encode(transcriptionHistory) {
             UserDefaults.standard.set(data, forKey: transcriptionHistoryKey)
         }

@@ -21,7 +21,7 @@ class OverlayWindow: NSPanel {
         self.isOpaque = false
         self.hasShadow = true
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        self.isMovableByWindowBackground = false
+        self.isMovableByWindowBackground = true
         self.hidesOnDeactivate = false
 
         // Set up the SwiftUI content

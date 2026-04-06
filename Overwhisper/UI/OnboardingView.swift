@@ -4,7 +4,8 @@ import AppKit
 
 struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
-
+    @ObservedObject var modelManager: ModelManager
+    
     let openAppSettings: () -> Void
     let finishOnboarding: () -> Void
 
@@ -12,7 +13,7 @@ struct OnboardingView: View {
     @State private var microphoneStatus: AVAuthorizationStatus = .notDetermined
     @State private var accessibilityGranted: Bool = false
 
-    private let totalSteps = 3
+    private let totalSteps = 4
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -50,6 +51,8 @@ struct OnboardingView: View {
         .frame(width: 520, height: 420)
         .onAppear {
             refreshPermissions()
+            // Start downloading the default model if not already downloaded
+            downloadDefaultModelIfNeeded()
         }
     }
 
@@ -57,7 +60,8 @@ struct OnboardingView: View {
         switch stepIndex {
         case 0: return "Welcome to Overwhisper"
         case 1: return "Grant Permissions"
-        case 2: return "Final Setup"
+        case 2: return "Download Model"
+        case 3: return "Final Setup"
         default: return "Welcome"
         }
     }
@@ -67,9 +71,9 @@ struct OnboardingView: View {
         switch stepIndex {
         case 0:
             VStack(alignment: .leading, spacing: 12) {
-                Text("Let’s get you ready to record and transcribe fast.")
+                Text("Let's get you ready to record and transcribe fast.")
                     .font(.title3)
-                Text("We’ll check permissions and confirm your recording preferences.")
+                Text("We'll check permissions, download the transcription model, and confirm your recording preferences.")
                     .foregroundColor(.secondary)
 
                 Divider().padding(.vertical, 8)
@@ -108,6 +112,79 @@ struct OnboardingView: View {
                 }
             }
         case 2:
+            VStack(alignment: .leading, spacing: 16) {
+                let recommendedModel = SystemInfo.getRecommendedModel()
+                
+                HStack(spacing: 12) {
+                    Image(systemName: "cpu")
+                        .font(.system(size: 32))
+                        .foregroundColor(.accentColor)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(recommendedModel.displayName) Model \(recommendedModel.isEnglishOnly ? "(English)" : "(Multilingual)")")
+                            .font(.headline)
+                        Text("\(recommendedModel.size) • Auto-selected for your Mac")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // Show system info
+                HStack {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.secondary)
+                    Text(SystemInfo.getSystemDescription())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+                
+                if appState.isDownloadingModel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Downloading...")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        ProgressView(value: appState.modelDownloadProgress)
+                            .frame(maxWidth: .infinity)
+                        
+                        Text("\(Int(appState.modelDownloadProgress * 100))% complete")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else if appState.downloadedModels.contains(recommendedModel.rawValue) {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Downloaded and ready")
+                            .foregroundColor(.green)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("This model was auto-selected based on your Mac's specs. You can change models later in Settings.")
+                            .foregroundColor(.secondary)
+                        
+                        Button("Download Now") {
+                            downloadRecommendedModel()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+                
+                Spacer()
+                
+                if !appState.isDownloadingModel && !appState.downloadedModels.contains(recommendedModel.rawValue) {
+                    Button("Skip for now") {
+                        stepIndex = min(stepIndex + 1, totalSteps - 1)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                }
+            }
+        case 3:
             VStack(alignment: .leading, spacing: 12) {
                 Text("Choose your preferred recording mode.")
                 Picker("Recording Mode", selection: $appState.recordingMode) {
@@ -218,6 +295,25 @@ struct OnboardingView: View {
             NSWorkspace.shared.open(url)
         }
     }
+    
+    private func downloadDefaultModelIfNeeded() {
+        let recommendedModel = SystemInfo.getRecommendedModel().rawValue
+        guard !appState.downloadedModels.contains(recommendedModel),
+              !appState.isDownloadingModel else { return }
+        
+        Task {
+            try? await modelManager.downloadModel(recommendedModel)
+        }
+    }
+    
+    private func downloadRecommendedModel() {
+        let recommendedModel = SystemInfo.getRecommendedModel().rawValue
+        guard !appState.isDownloadingModel else { return }
+        
+        Task {
+            try? await modelManager.downloadModel(recommendedModel)
+        }
+    }
 }
 
 struct PermissionRow: View {
@@ -261,6 +357,11 @@ struct PermissionRow: View {
 
 #Preview {
     let appState = AppState()
-    return OnboardingView(openAppSettings: {}, finishOnboarding: {})
-        .environmentObject(appState)
+    let modelManager = ModelManager(appState: appState)
+    return OnboardingView(
+        modelManager: modelManager,
+        openAppSettings: {},
+        finishOnboarding: {}
+    )
+    .environmentObject(appState)
 }

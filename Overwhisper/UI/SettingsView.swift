@@ -24,6 +24,12 @@ struct SettingsView: View {
                 }
                 .environmentObject(appState)
 
+            SmartFeaturesSettingsView()
+                .tabItem {
+                    Label("Smart", systemImage: "wand.and.stars")
+                }
+                .environmentObject(appState)
+
             if appState.debugModeEnabled {
                 DebugSettingsView()
                     .tabItem {
@@ -162,6 +168,7 @@ struct GeneralSettingsView: View {
 struct ModelsSettingsView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var modelManager: ModelManager
+    @State private var showModelSelection = false
 
     private var isUsingOpenAI: Bool {
         appState.transcriptionEngine == .openAI
@@ -184,6 +191,40 @@ struct ModelsSettingsView: View {
 
     var body: some View {
         List {
+            // Current Model - Visual indicator only
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text("Current Engine:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            if appState.transcriptionEngine == .whisperKit {
+                                Label("Local", systemImage: "cpu")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.green)
+                            } else {
+                                Label("Cloud", systemImage: "cloud.fill")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        
+                        if appState.transcriptionEngine == .whisperKit {
+                            Text(appState.whisperModel.displayName)
+                                .font(.callout)
+                                .foregroundColor(.primary)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            }
+
             // Language Selection
             Section {
                 Picker("Language", selection: $appState.language) {
@@ -278,149 +319,38 @@ struct ModelsSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
-            // Local Models - English
+            // Local Model Section - Always visible
             Section {
-                ForEach(WhisperModel.englishModels) { model in
-                    ModelRowView(
-                        model: model,
-                        isDownloaded: appState.downloadedModels.contains(model.rawValue),
-                        isSelected: !isUsingOpenAI && appState.whisperModel == model,
-                        isDownloading: appState.currentlyDownloadingModel == model.rawValue,
-                        downloadProgress: appState.modelDownloadProgress,
-                        modelManager: modelManager
-                    )
-                    .environmentObject(appState)
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(appState.whisperModel.displayName)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text(appState.downloadedModels.contains(appState.whisperModel.rawValue) ? "Downloaded" : "Not downloaded")
+                            .font(.caption)
+                            .foregroundColor(appState.downloadedModels.contains(appState.whisperModel.rawValue) ? .green : .orange)
+                    }
+                    
+                    Spacer()
+                    
+                    Button("Change Model...") {
+                        showModelSelection = true
+                    }
+                    .buttonStyle(.bordered)
                 }
+                .padding(.vertical, 4)
             } header: {
-                Text("On-Device — English")
+                Text("Local Model")
             } footer: {
-                Text("Runs locally on your Mac. Optimized for English speech.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            // Local Models - Multilingual
-            Section {
-                ForEach(WhisperModel.multilingualModels) { model in
-                    ModelRowView(
-                        model: model,
-                        isDownloaded: appState.downloadedModels.contains(model.rawValue),
-                        isSelected: !isUsingOpenAI && appState.whisperModel == model,
-                        isDownloading: appState.currentlyDownloadingModel == model.rawValue,
-                        downloadProgress: appState.modelDownloadProgress,
-                        modelManager: modelManager
-                    )
-                    .environmentObject(appState)
-                }
-            } header: {
-                Text("On-Device — Multilingual")
-            } footer: {
-                Text("Runs locally. Supports 99+ languages including Korean, Japanese, Chinese, and more.")
+                Text("The local model is used when Cloud is not selected.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
         .listStyle(.inset)
-    }
-}
-
-struct ModelRowView: View {
-    @EnvironmentObject var appState: AppState
-    @State private var showDeleteConfirmation = false
-    let model: WhisperModel
-    let isDownloaded: Bool
-    let isSelected: Bool
-    let isDownloading: Bool
-    let downloadProgress: Double
-    let modelManager: ModelManager
-
-    var body: some View {
-        HStack {
-            // Selection indicator and model info - tappable area
-            HStack {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : (isDownloaded ? "circle" : "circle.dashed"))
-                    .foregroundColor(isSelected ? .accentColor : (isDownloaded ? .primary : .secondary))
-                    .font(.title3)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(model.displayName)
-                            .fontWeight(isSelected ? .semibold : .regular)
-
-                        if isDownloaded {
-                            Image(systemName: "checkmark.seal.fill")
-                                .foregroundColor(.green)
-                                .font(.caption)
-                        }
-                    }
-
-                    Text(model.size)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if isDownloaded && !isSelected {
-                    appState.transcriptionEngine = .whisperKit
-                    appState.whisperModel = model
-                }
-            }
-
-            Spacer()
-
-            if isDownloading {
-                HStack(spacing: 8) {
-                    ProgressView(value: downloadProgress)
-                        .frame(width: 60)
-                    Text("\(Int(downloadProgress * 100))%")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(width: 35)
-                }
-            } else if isDownloaded {
-                HStack(spacing: 8) {
-                    if isSelected {
-                        Text("Active")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(4)
-                    }
-
-                    Button(action: {
-                        showDeleteConfirmation = true
-                    }) {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Delete model")
-                }
-            } else {
-                Button(action: {
-                    Task {
-                        try? await modelManager.downloadModel(model.rawValue)
-                    }
-                }) {
-                    Label("Download", systemImage: "arrow.down.circle")
-                }
-                .buttonStyle(.bordered)
-                .disabled(appState.currentlyDownloadingModel != nil)
-            }
-        }
-        .padding(.vertical, 4)
-        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-        .alert("Delete Model", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                try? modelManager.deleteModel(model.rawValue)
-            }
-        } message: {
-            Text("Are you sure you want to delete \(model.displayName)? You'll need to download it again to use it.")
+        .sheet(isPresented: $showModelSelection) {
+            ModelSelectionView(modelManager: modelManager)
+                .environmentObject(appState)
         }
     }
 }
@@ -464,6 +394,13 @@ struct OutputSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            Section("Output") {
+                Toggle("Copy text to clipboard", isOn: $appState.copyToClipboard)
+                Text("Keep transcribed text in clipboard for manual pasting")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section("Feedback") {
                 Toggle("Play sound when recording starts", isOn: $appState.playSoundOnStart)
                 Toggle("Play sound on completion", isOn: $appState.playSoundOnCompletion)
@@ -471,39 +408,30 @@ struct OutputSettingsView: View {
             }
 
             Section("Transcription History") {
-                if appState.transcriptionHistory.isEmpty {
-                    Text("No transcription yet")
-                        .foregroundColor(.secondary)
-                        .italic()
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(appState.transcriptionHistory.prefix(10)) { entry in
-                                TranscriptionHistoryRow(entry: entry)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 180)
-
-                    if appState.transcriptionHistory.count > 10 {
-                        Text("Showing 10 of \(appState.transcriptionHistory.count) entries")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Button("Clear History") {
-                        appState.clearTranscriptionHistory()
-                    }
-                }
-
-                if let error = appState.lastError {
+                TranscriptionHistoryView()
+                    .frame(height: 280)
+            }
+            
+            Section("Auto-Save Settings") {
+                Toggle("Auto-save transcriptions to file", isOn: $appState.autoSaveToFile)
+                
+                if appState.autoSaveToFile {
                     HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.yellow)
-                        Text(error)
+                        Text("Save Location:")
+                        Spacer()
+                        Text(appState.autoSaveDirectory.isEmpty ? "Documents folder" : appState.autoSaveDirectory)
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
+                    
+                    Button("Choose Folder...") {
+                        chooseAutoSaveDirectory()
+                    }
+                    .buttonStyle(.bordered)
+                    
+                    Text("Files are saved as Overwhisper_YYYY-MM-DD.txt")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
 
@@ -522,6 +450,21 @@ struct OutputSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+    
+    private func chooseAutoSaveDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Select"
+        panel.message = "Choose a folder to save transcription logs"
+        
+        panel.begin { result in
+            if result == .OK, let url = panel.url {
+                appState.autoSaveDirectory = url.path
+            }
+        }
     }
 }
 
@@ -711,6 +654,74 @@ struct DebugLogRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+struct SmartFeaturesSettingsView: View {
+    @EnvironmentObject var appState: AppState
+    
+    var body: some View {
+        Form {
+            Section("Auto-Stop Recording") {
+                Toggle("Stop on silence detection", isOn: $appState.autoDetectSilence)
+                
+                if appState.autoDetectSilence {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Silence timeout:")
+                            Spacer()
+                            Text("\(Int(appState.silenceTimeoutSeconds)) seconds")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Slider(
+                            value: $appState.silenceTimeoutSeconds,
+                            in: 1...10,
+                            step: 0.5
+                        )
+                    }
+                    .padding(.vertical, 4)
+                }
+                
+                Text("Automatically stop recording after the specified period of silence.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Section("Voice Processing") {
+                Toggle("Voice Activity Detection (VAD)", isOn: $appState.voiceActivityDetection)
+                
+                Text("Filter out background noise and only transcribe when speech is detected.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Section("Transcription Options") {
+                Toggle("Auto-punctuation", isOn: $appState.autoPunctuation)
+                
+                Text("Automatically add punctuation to transcriptions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Divider()
+                
+                Toggle("Profanity filter", isOn: $appState.profanityFilter)
+                
+                Text("Mask inappropriate language in transcriptions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("These features use additional processing and may affect transcription speed.", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
     }
 }
 

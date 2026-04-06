@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import HotKey
+import SwiftUI
 
 enum HotkeyEvent {
     case keyDown
@@ -125,74 +126,49 @@ class HotkeyManager {
     }
 }
 
-// Hotkey recorder view for settings
-import SwiftUI
+// MARK: - Hotkey Recorder View
 
 struct HotkeyRecorderView: View {
     @EnvironmentObject var appState: AppState
     @Binding var config: HotkeyConfig
-    let recorderId: String  // Unique identifier for this recorder
-    @State private var localMonitor: Any?
-    @State private var globalMonitor: Any?
+    let recorderId: String
     @State private var conflictMessage: String?
-
-    private var isRecording: Bool {
-        appState.activeHotkeyRecorder == recorderId
-    }
+    @State private var isRecording: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(isRecording ? "Press a key..." : config.displayString)
-                    .frame(minWidth: 100)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(isRecording ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
-                    .foregroundColor(config.isEmpty && !isRecording ? .secondary : .primary)
-                    .cornerRadius(6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(isRecording ? Color.accentColor : Color.clear, lineWidth: 2)
-                    )
-
-                Button(isRecording ? "Cancel" : "Record") {
-                    if isRecording {
-                        stopRecording()
-                    } else {
-                        startRecording()
-                    }
+        HStack(spacing: 8) {
+            // Key capture field - becomes first responder when recording
+            KeyCaptureField(
+                isRecording: $isRecording,
+                displayText: isRecording ? "Listening..." : config.displayString,
+                onKeyCapture: { keyCode, modifiers in
+                    handleCapturedKey(keyCode: keyCode, modifiers: modifiers)
+                },
+                onCancel: {
+                    stopRecording()
                 }
-                .buttonStyle(.bordered)
+            )
+            .frame(minWidth: 120, minHeight: 32)
 
-                // Clear button - only show if hotkey is set and not recording
-                if !config.isEmpty && !isRecording {
-                    Button {
-                        config = .empty
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Clear hotkey")
+            Button(isRecording ? "Cancel" : "Record") {
+                if isRecording {
+                    stopRecording()
+                } else {
+                    startRecording()
                 }
             }
+            .buttonStyle(.bordered)
 
-            if let message = appState.hotkeyConflictMessage(for: recorderId) {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-        }
-        .onDisappear {
-            // Clean up monitors when view disappears
-            if isRecording {
-                stopRecording()
-            }
-        }
-        .onChange(of: appState.activeHotkeyRecorder) { _, newValue in
-            // If another recorder became active, clean up our monitors
-            if newValue != recorderId {
-                cleanupMonitors()
+            // Clear button - only show if hotkey is set and not recording
+            if !config.isEmpty && !isRecording {
+                Button {
+                    config = .empty
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear hotkey")
             }
         }
         .alert(
@@ -209,74 +185,42 @@ struct HotkeyRecorderView: View {
     }
 
     private func startRecording() {
-        // Set this recorder as active (will automatically deactivate any other)
-        appState.activeHotkeyRecorder = recorderId
-
-        // Monitor for key events
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
-            self.handleKeyEvent(event)
-            return nil // Consume the event
-        }
-
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
-            self.handleKeyEvent(event)
-        }
+        isRecording = true
     }
 
     private func stopRecording() {
-        appState.activeHotkeyRecorder = nil
-        cleanupMonitors()
+        isRecording = false
     }
 
-    private func cleanupMonitors() {
-        if let monitor = localMonitor {
-            NSEvent.removeMonitor(monitor)
-            localMonitor = nil
-        }
-
-        if let monitor = globalMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalMonitor = nil
-        }
-    }
-
-    private func handleKeyEvent(_ event: NSEvent) {
-        // Only handle events if we're the active recorder
-        guard isRecording else { return }
-
-        // Ignore modifier-only events unless there's also a key
-        if event.type == .flagsChanged {
-            return
-        }
-
+    private func handleCapturedKey(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
         // Ignore escape - used to cancel
-        if event.keyCode == UInt16(kVK_Escape) {
+        if keyCode == UInt16(kVK_Escape) {
             stopRecording()
             return
         }
 
-        // Build modifiers
-        var modifiers: UInt32 = 0
-        if event.modifierFlags.contains(.option) {
-            modifiers |= UInt32(optionKey)
+        // Build carbon modifiers
+        var carbonModifiers: UInt32 = 0
+        if modifiers.contains(.option) {
+            carbonModifiers |= UInt32(optionKey)
         }
-        if event.modifierFlags.contains(.control) {
-            modifiers |= UInt32(controlKey)
+        if modifiers.contains(.control) {
+            carbonModifiers |= UInt32(controlKey)
         }
-        if event.modifierFlags.contains(.shift) {
-            modifiers |= UInt32(shiftKey)
+        if modifiers.contains(.shift) {
+            carbonModifiers |= UInt32(shiftKey)
         }
-        if event.modifierFlags.contains(.command) {
-            modifiers |= UInt32(cmdKey)
+        if modifiers.contains(.command) {
+            carbonModifiers |= UInt32(cmdKey)
         }
 
         // Require at least one modifier for most keys (except F-keys)
-        let isFunctionKey = event.keyCode >= UInt16(kVK_F1) && event.keyCode <= UInt16(kVK_F20)
-        if modifiers == 0 && !isFunctionKey {
+        let isFunctionKey = keyCode >= UInt16(kVK_F1) && keyCode <= UInt16(kVK_F20)
+        if carbonModifiers == 0 && !isFunctionKey {
             return
         }
 
-        let newConfig = HotkeyConfig(keyCode: UInt32(event.keyCode), modifiers: modifiers)
+        let newConfig = HotkeyConfig(keyCode: UInt32(keyCode), modifiers: carbonModifiers)
         if let conflict = appState.hotkeyConflictMessage(for: recorderId, pendingConfig: newConfig) {
             conflictMessage = conflict
             stopRecording()
@@ -285,5 +229,184 @@ struct HotkeyRecorderView: View {
 
         config = newConfig
         stopRecording()
+    }
+}
+
+// MARK: - Key Capture Field (AppKit-based)
+
+struct KeyCaptureField: NSViewRepresentable {
+    @Binding var isRecording: Bool
+    let displayText: String
+    let onKeyCapture: (UInt16, NSEvent.ModifierFlags) -> Void
+    let onCancel: () -> Void
+
+    func makeNSView(context: Context) -> KeyCaptureNSView {
+        let view = KeyCaptureNSView()
+        view.onKeyCapture = onKeyCapture
+        view.onCancel = onCancel
+        view.displayText = displayText
+        view.delegate = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ nsView: KeyCaptureNSView, context: Context) {
+        nsView.isRecording = isRecording
+        nsView.displayText = displayText
+        nsView.updateAppearance()
+        
+        if isRecording {
+            // Small delay to ensure the view is in the window hierarchy
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator: KeyCaptureNSViewDelegate {
+        func keyCaptureViewDidBecomeFirstResponder(_ view: KeyCaptureNSView) {
+            // Optional: notify when view is ready
+        }
+    }
+}
+
+protocol KeyCaptureNSViewDelegate: AnyObject {
+    func keyCaptureViewDidBecomeFirstResponder(_ view: KeyCaptureNSView)
+}
+
+class KeyCaptureNSView: NSView {
+    var onKeyCapture: ((UInt16, NSEvent.ModifierFlags) -> Void)?
+    var onCancel: (() -> Void)?
+    weak var delegate: KeyCaptureNSViewDelegate?
+    
+    var isRecording: Bool = false
+    var displayText: String = ""
+    
+    private var textField: NSTextField!
+    private var listeningIndicator: NSView?
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+    
+    private func setup() {
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        
+        // Create text field for display
+        let field = NSTextField(labelWithString: "")
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.alignment = .center
+        field.font = NSFont.systemFont(ofSize: 13)
+        field.isSelectable = false
+        addSubview(field)
+        
+        NSLayoutConstraint.activate([
+            field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            field.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+        
+        textField = field
+        updateAppearance()
+    }
+
+    func updateAppearance() {
+        if isRecording {
+            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
+            layer?.borderColor = NSColor.controlAccentColor.cgColor
+            layer?.borderWidth = 2
+            textField.stringValue = "Listening..."
+            textField.textColor = .controlAccentColor
+            showListeningIndicator()
+        } else {
+            layer?.backgroundColor = NSColor.secondarySystemFill.cgColor
+            layer?.borderColor = NSColor.clear.cgColor
+            layer?.borderWidth = 0
+            textField.stringValue = displayText
+            textField.textColor = displayText == "Not set" ? .secondaryLabelColor : .controlTextColor
+            hideListeningIndicator()
+        }
+    }
+    
+    private func showListeningIndicator() {
+        hideListeningIndicator()
+        
+        let indicator = NSView()
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.wantsLayer = true
+        indicator.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        indicator.layer?.cornerRadius = 3
+        addSubview(indicator)
+        
+        NSLayoutConstraint.activate([
+            indicator.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            indicator.centerYAnchor.constraint(equalTo: centerYAnchor),
+            indicator.widthAnchor.constraint(equalToConstant: 6),
+            indicator.heightAnchor.constraint(equalToConstant: 6)
+        ])
+        
+        listeningIndicator = indicator
+        
+        // Animate the indicator
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 1.0
+        animation.toValue = 0.3
+        animation.duration = 0.6
+        animation.autoreverses = true
+        animation.repeatCount = .infinity
+        indicator.layer?.add(animation, forKey: "pulse")
+    }
+    
+    private func hideListeningIndicator() {
+        listeningIndicator?.removeFromSuperview()
+        listeningIndicator = nil
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func becomeFirstResponder() -> Bool {
+        let success = super.becomeFirstResponder()
+        if success {
+            delegate?.keyCaptureViewDidBecomeFirstResponder(self)
+        }
+        return success
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard isRecording else {
+            super.keyDown(with: event)
+            return
+        }
+
+        // Ignore escape - used to cancel
+        if event.keyCode == UInt16(kVK_Escape) {
+            onCancel?()
+            return
+        }
+
+        // Capture the key
+        onKeyCapture?(event.keyCode, event.modifierFlags)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        // Just pass through - we capture modifiers with keyDown
+        super.flagsChanged(with: event)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if isRecording {
+            window?.makeFirstResponder(self)
+        }
     }
 }
