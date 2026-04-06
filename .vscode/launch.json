@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:OverWhisper}",
+            "name": "Debug Overwhisper",
+            "target": "Overwhisper",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Overwhisper"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:OverWhisper}",
+            "name": "Release Overwhisper",
+            "target": "Overwhisper",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Overwhisper"
+        }
+    ]
+}
