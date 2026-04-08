@@ -12,7 +12,7 @@ actor ParakeetEngine: TranscriptionEngine {
     self.appState = appState
   }
 
-  func initialize() async {
+  func initialize() async throws {
     let modelType = await appState.parakeetModel
 
     let modelChanged = currentModelType != modelType
@@ -55,19 +55,29 @@ actor ParakeetEngine: TranscriptionEngine {
 
       AppLogger.transcription.info("Parakeet engine initialized successfully")
     } catch {
-      AppLogger.transcription.error(
-        "Failed to initialize Parakeet engine: \(error.localizedDescription)")
+      isInitialized = false
+      asrManager = nil
 
       await MainActor.run {
         appState.isDownloadingModel = false
         appState.isModelDownloaded = false
         appState.lastError = "Failed to initialize Parakeet: \(error.localizedDescription)"
       }
+
+      AppLogger.transcription.error(
+        "Failed to initialize Parakeet engine: \(error.localizedDescription)")
+
+      throw ParakeetError.initializationFailed(error.localizedDescription)
     }
   }
 
   func transcribe(audioURL: URL) async throws -> String {
-    await initialize()
+    do {
+      try await initialize()
+    } catch {
+      AppLogger.transcription.error("Failed to initialize Parakeet before transcription: \(error.localizedDescription)")
+      throw error
+    }
 
     guard let asrManager = asrManager else {
       throw ParakeetError.notInitialized
@@ -93,6 +103,7 @@ actor ParakeetEngine: TranscriptionEngine {
 enum ParakeetError: LocalizedError {
   case notInitialized
   case audioConversionFailed
+  case initializationFailed(String)
 
   var errorDescription: String? {
     switch self {
@@ -100,6 +111,8 @@ enum ParakeetError: LocalizedError {
       return "Parakeet engine is not initialized"
     case .audioConversionFailed:
       return "Failed to convert audio for Parakeet"
+    case .initializationFailed(let message):
+      return "Parakeet initialization failed: \(message)"
     }
   }
 }

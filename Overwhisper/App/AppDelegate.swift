@@ -508,7 +508,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     case .parakeet:
       let engine = ParakeetEngine(appState: appState)
       transcriptionEngine = engine
-      await engine.initialize()
+      do {
+        try await engine.initialize()
+      } catch {
+        AppLogger.app.error("Failed to initialize Parakeet engine: \(error.localizedDescription)")
+        appState.lastError = "Failed to initialize Parakeet: \(error.localizedDescription)"
+      }
     case .openAI:
       transcriptionEngine = OpenAIEngine(
         apiKey: appState.openAIAPIKey, translateToEnglish: appState.translateToEnglish,
