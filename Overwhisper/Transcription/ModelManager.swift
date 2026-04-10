@@ -7,8 +7,15 @@ class ModelManager: ObservableObject {
     private let appState: AppState
     private let modelsDirectory: URL
 
+    /// When running as a dev build (not a .app bundle), models are stored in <repo>/.models/
+    let devDownloadBase: URL?
+
     @Published var downloadedModels: Set<String> = []
     @Published var downloadProgress: [String: Double] = [:]
+
+    private static var isDevBuild: Bool {
+        !Bundle.main.bundlePath.hasSuffix(".app")
+    }
 
     init(appState: AppState) {
         self.appState = appState
@@ -16,6 +23,16 @@ class ModelManager: ObservableObject {
         // Set up models directory in Application Support
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         self.modelsDirectory = appSupport.appendingPathComponent("Overwhisper/Models", isDirectory: true)
+
+        // For dev builds, use .models/ in the working directory (repo root)
+        if Self.isDevBuild {
+            let devDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent(".models", isDirectory: true)
+            self.devDownloadBase = devDir
+            try? FileManager.default.createDirectory(at: devDir, withIntermediateDirectories: true)
+        } else {
+            self.devDownloadBase = nil
+        }
 
         // Create directory if it doesn't exist
         try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
@@ -45,6 +62,12 @@ class ModelManager: ObservableObject {
             // Our custom directory
             modelsDirectory
         ]
+
+        // Dev build stores models in <repo>/.models/huggingface/models/argmaxinc/whisperkit-coreml/
+        if let devBase = devDownloadBase {
+            let devModelsPath = devBase.appendingPathComponent("models/argmaxinc/whisperkit-coreml")
+            scanDirectory(devModelsPath, foundModels: &foundModels)
+        }
 
         for basePath in possiblePaths {
             scanDirectory(basePath, foundModels: &foundModels)
@@ -154,6 +177,7 @@ class ModelManager: ObservableObject {
             // Use WhisperKit's built-in download functionality
             let modelFolder = try await WhisperKit.download(
                 variant: modelName,
+                downloadBase: devDownloadBase,
                 progressCallback: { progress in
                     Task { @MainActor in
                         self.appState.modelDownloadProgress = progress.fractionCompleted
@@ -269,13 +293,16 @@ class ModelManager: ObservableObject {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
 
-        let possiblePaths = [
+        var possiblePaths = [
             appSupport.appendingPathComponent("MacWhisper/models/whisperkit/models/argmaxinc/whisperkit-coreml"),
             appSupport.appendingPathComponent("superwhisper/models/argmaxinc/whisperkit-coreml"),
             homeDir.appendingPathComponent("Documents/huggingface/models/argmaxinc/whisperkit-coreml"),
             appSupport.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml"),
             modelsDirectory
         ]
+        if let devBase = devDownloadBase {
+            possiblePaths.append(devBase.appendingPathComponent("models/argmaxinc/whisperkit-coreml"))
+        }
 
         // Check direct paths (e.g. .../openai_whisper-small.en/)
         for basePath in possiblePaths {

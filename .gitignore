@@ -1,4 +1,5 @@
 .build/
+.models/
 .swiftpm/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/

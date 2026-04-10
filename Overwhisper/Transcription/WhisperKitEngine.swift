@@ -52,6 +52,7 @@ actor WhisperKitEngine: TranscriptionEngine {
 
                 whisperKit = try await WhisperKit(
                     model: modelName,
+                    downloadBase: await modelManager.devDownloadBase,
                     modelFolder: cachedModelFolder,
                     computeOptions: ModelComputeOptions(
                         audioEncoderCompute: .cpuAndNeuralEngine,
