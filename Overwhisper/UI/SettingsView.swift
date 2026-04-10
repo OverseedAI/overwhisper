@@ -221,6 +221,24 @@ struct ModelsSettingsView: View {
                 Text("Enter names, acronyms, or terms that get misspelled. Works best as a natural phrase, e.g. \"Meeting with Hal Shin at Overseed AI about WhisperKit.\"")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Text Replacements
+            Section {
+                TextEditor(text: $appState.textReplacements)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 60, maxHeight: 120)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.secondary.opacity(0.05))
+                    .cornerRadius(6)
+            } header: {
+                Text("Text Replacements")
+            } footer: {
+                Text("One per line. Use \u{2192} or -> as separator. Case-insensitive.\nExample: Cloud Code \u{2192} Claude Code")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // Cloud API Section

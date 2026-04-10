@@ -265,6 +265,9 @@ class AppState: ObservableObject {
     @Published var customVocabulary: String {
         didSet { UserDefaults.standard.set(customVocabulary, forKey: "customVocabulary") }
     }
+    @Published var textReplacements: String {
+        didSet { UserDefaults.standard.set(textReplacements, forKey: "textReplacements") }
+    }
     @Published var openAIAPIKey: String {
         didSet {
             try? KeychainHelper.save(key: "openAIAPIKey", data: openAIAPIKey.data(using: .utf8) ?? Data())
@@ -368,6 +371,7 @@ class AppState: ObservableObject {
         self.translateToEnglish = UserDefaults.standard.bool(forKey: "translateToEnglish")
         self.enableCloudFallback = UserDefaults.standard.bool(forKey: "enableCloudFallback")
         self.customVocabulary = UserDefaults.standard.string(forKey: "customVocabulary") ?? ""
+        self.textReplacements = UserDefaults.standard.string(forKey: "textReplacements") ?? ""
 
         if let apiKeyData = try? KeychainHelper.load(key: "openAIAPIKey"),
            let apiKey = String(data: apiKeyData, encoding: .utf8) {
@@ -445,6 +449,29 @@ class AppState: ObservableObject {
         recordingTimer = nil
     }
 
+    /// Applies text replacements (case-insensitive) from the "from → to" pairs in settings.
+    func applyTextReplacements(_ text: String) -> String {
+        guard !textReplacements.isEmpty else { return text }
+
+        var result = text
+        for line in textReplacements.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+
+            // Support both "→" and "->" as separators
+            let separator = trimmed.contains("→") ? "→" : "->"
+            let parts = trimmed.components(separatedBy: separator)
+            guard parts.count == 2 else { continue }
+
+            let from = parts[0].trimmingCharacters(in: .whitespaces)
+            let to = parts[1].trimmingCharacters(in: .whitespaces)
+            guard !from.isEmpty else { continue }
+
+            result = result.replacingOccurrences(of: from, with: to, options: .caseInsensitive)
+        }
+        return result
+    }
+
     func addTranscriptionHistory(_ text: String) {
         guard !text.isEmpty else { return }
         let entry = TranscriptionHistoryEntry(text: text)
@@ -469,6 +496,7 @@ class AppState: ObservableObject {
         translateToEnglish = false
         enableCloudFallback = false
         customVocabulary = ""
+        textReplacements = ""
         playSoundOnCompletion = true
         playSoundOnStart = false
         showNotificationOnError = true

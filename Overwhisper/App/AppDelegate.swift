@@ -638,8 +638,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 try? FileManager.default.removeItem(at: url)
 
                 if !text.isEmpty {
-                    appState.addTranscriptionHistory(text)
-                    let didPaste = textInserter.insertText(text)
+                    let finalText = appState.applyTextReplacements(text)
+                    appState.addTranscriptionHistory(finalText)
+                    let didPaste = textInserter.insertText(finalText)
 
                     if didPaste {
                         if appState.playSoundOnCompletion {
@@ -706,8 +707,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             try? FileManager.default.removeItem(at: audioURL)
 
             if !text.isEmpty {
-                appState.addTranscriptionHistory(text)
-                let didPaste = textInserter.insertText(text)
+                let finalText = appState.applyTextReplacements(text)
+                appState.addTranscriptionHistory(finalText)
+                let didPaste = textInserter.insertText(finalText)
                 appState.addDebugLog("Cloud fallback succeeded", source: "Transcription")
 
                 if didPaste {
