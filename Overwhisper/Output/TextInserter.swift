@@ -1,5 +1,4 @@
 import AppKit
-import Carbon.HIToolbox
 
 class TextInserter {
 
@@ -55,32 +54,18 @@ class TextInserter {
     }
 
     private func simulatePaste() {
-        // Create event source
-        guard let source = CGEventSource(stateID: .hidSystemState) else {
-            AppLogger.system.error("Failed to create event source")
-            return
+        let script = """
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
+            """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+            if let error = error {
+                AppLogger.system.error("AppleScript paste failed: \(error)")
+            }
         }
-
-        // V key code
-        let vKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_V)
-
-        // Create key down event with Command modifier
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true) else {
-            AppLogger.system.error("Failed to create key down event")
-            return
-        }
-        keyDown.flags = .maskCommand
-
-        // Create key up event
-        guard let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
-            AppLogger.system.error("Failed to create key up event")
-            return
-        }
-        keyUp.flags = .maskCommand
-
-        // Post the events
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
     }
 
     // Alternative method using Accessibility API (more reliable in some apps)
