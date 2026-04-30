@@ -625,9 +625,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             do {
                 audioURL = try audioRecorder.stopRecording()
+                let meanRMS = audioRecorder.meanRMS
+                let peakRMS = audioRecorder.peakRMS
 
                 guard let url = audioURL else {
                     throw TranscriptionError.noAudioData
+                }
+
+                if appState.skipSilentRecordings && Self.isBelowSilenceThreshold(meanRMS: meanRMS) {
+                    let meanDb = AppDelegate.dbFromRMS(meanRMS)
+                    let peakDb = AppDelegate.dbFromRMS(peakRMS)
+                    AppLogger.audio.info(
+                        "Skipping silent recording — mean RMS \(meanRMS) (\(meanDb) dBFS, peak \(peakDb) dBFS) below threshold \(AppDelegate.silenceThresholdDb) dBFS"
+                    )
+                    appState.addDebugLog(
+                        String(format: "Skipped silent recording (mean %.1f dBFS, peak %.1f dBFS)", meanDb, peakDb),
+                        source: "Transcription"
+                    )
+
+                    let latency = Date().timeIntervalSince(started)
+                    finalizeAudioFile(
+                        url: url,
+                        engine: engineLabel,
+                        model: modelLabel,
+                        recordingDuration: recordingDuration,
+                        transcribedText: "",
+                        latency: latency,
+                        language: language,
+                        errorMessage: String(format: "No speech detected (mean %.1f dBFS, peak %.1f dBFS)", meanDb, peakDb),
+                        usedCloudFallback: false
+                    )
+
+                    appState.recordingState = .idle
+                    overlayWindow.hide()
+                    return
                 }
 
                 guard let engine = transcriptionEngine else {
@@ -639,7 +670,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let text = try await engine.transcribe(audioURL: url)
                 let latency = Date().timeIntervalSince(started)
 
-                let finalText = text.isEmpty ? "" : appState.applyTextReplacements(text)
+                let cleaned = AppDelegate.stripNonSpeechAnnotations(text)
+                if !text.isEmpty && cleaned.isEmpty {
+                    appState.addDebugLog(
+                        "Skipped non-speech annotation: \(text)", source: "Transcription")
+                }
+                let finalText = cleaned.isEmpty ? "" : appState.applyTextReplacements(cleaned)
 
                 finalizeAudioFile(
                     url: url,
@@ -750,7 +786,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let text = try await openAIEngine.transcribe(audioURL: audioURL)
             let latency = Date().timeIntervalSince(started)
 
-            let finalText = text.isEmpty ? "" : appState.applyTextReplacements(text)
+            let cleaned = AppDelegate.stripNonSpeechAnnotations(text)
+            if !text.isEmpty && cleaned.isEmpty {
+                appState.addDebugLog(
+                    "Skipped non-speech annotation (fallback): \(text)", source: "Transcription")
+            }
+            let finalText = cleaned.isEmpty ? "" : appState.applyTextReplacements(cleaned)
 
             finalizeAudioFile(
                 url: audioURL,
@@ -993,6 +1034,71 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    // MARK: - Silence detection
+
+    /// Mean RMS amplitude (dBFS) below which a recording is considered silent and
+    /// is skipped before sending to the transcription engine. Whisper hallucinates
+    /// "you" / "Thanks for watching." on near-silent inputs, so gating here keeps
+    /// noise out of the user's text. Threshold tuned against typical speech levels
+    /// (-25 to -35 dBFS mean) and condenser-mic noise floor (-45 dBFS or lower).
+    static let silenceThresholdDb: Float = -38.0
+
+    static func isBelowSilenceThreshold(meanRMS: Float) -> Bool {
+        // Treat exactly-zero buffers (e.g. failed converter chains) as silent too.
+        guard meanRMS > 0 else { return true }
+        return dbFromRMS(meanRMS) < silenceThresholdDb
+    }
+
+    static func dbFromRMS(_ rms: Float) -> Float {
+        20 * log10(max(rms, 1e-9))
+    }
+
+    // MARK: - Non-speech annotation stripping
+
+    /// Strips Whisper-style non-speech annotations from a transcription:
+    /// `*cough*`, `[Music]`, `[Applause]`, `[BLANK_AUDIO]`, `(coughs)`, etc.
+    /// Returns the cleaned text trimmed of surrounding whitespace.
+    static func stripNonSpeechAnnotations(_ text: String) -> String {
+        var result = text
+
+        // Asterisk-wrapped: *cough*, *sigh*, *laughs*
+        result = result.replacingOccurrences(
+            of: #"\*[^*\n]{1,60}\*"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Bracket-wrapped: [Music], [Applause], [BLANK_AUDIO], [silence]
+        result = result.replacingOccurrences(
+            of: #"\[[^\]\n]{1,60}\]"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Parenthetical sound effects — only match a curated list so we don't
+        // strip legitimate parentheticals like "(see fig. 2)".
+        let parentheticalPattern = #"(?i)\((?:cough(?:s|ing|ed)?|sigh(?:s|ing|ed)?|laugh(?:s|ing|ed|ter)?|sneeze(?:s|d)?|breath(?:e|es|ing|ed)?|gasp(?:s|ing|ed)?|music|applause|silence|noise|static|mumbl(?:e|es|ing)|whisper(?:s|ing)?|cry(?:ing|ies|ied)?|chuckl(?:e|es|ing)|groan(?:s|ing|ed)?|grunt(?:s|ing|ed)?|hum(?:s|ming|med)?|shout(?:s|ing|ed)?|yell(?:s|ing|ed)?|background(?:\s+\w+){0,3}|inaudible|indistinct(?:\s+\w+){0,3})\)"#
+        result = result.replacingOccurrences(
+            of: parentheticalPattern,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Collapse leftover double-spaces and stray punctuation islands like " . "
+        result = result.replacingOccurrences(
+            of: #"\s{2,}"#,
+            with: " ",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: #"^\s*[.,;:!?]+\s*"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

@@ -220,6 +220,20 @@ class AudioRecorder: ObservableObject {
     @Published var currentLevel: Float = 0.0
     @Published var isRecording: Bool = false
 
+    /// Highest per-buffer RMS amplitude (linear, 0..1) observed during the most
+    /// recent recording. Reset on each `startRecording()` call.
+    private(set) var peakRMS: Float = 0
+
+    /// Mean RMS amplitude (linear, 0..1) across the entire most recent recording,
+    /// computed as `sqrt(sumOfSquares / totalFrames)` over the raw mic channel.
+    /// Reset on each `startRecording()` call. Use this — not `peakRMS` — to gate
+    /// silent recordings, because a single mic transient can push peak above any
+    /// threshold even when the bulk of the recording is silence.
+    private(set) var meanRMS: Float = 0
+
+    private var sumOfSquares: Double = 0
+    private var totalSamples: Int = 0
+
     private let sampleRate: Double = 16000  // Whisper optimal
     private let channels: AVAudioChannelCount = 1  // Mono
 
@@ -238,6 +252,10 @@ class AudioRecorder: ObservableObject {
     func startRecording() throws {
         guard !isRecording else { return }
         loggedOnce.removeAll()
+        peakRMS = 0
+        meanRMS = 0
+        sumOfSquares = 0
+        totalSamples = 0
 
         // Check microphone permission before accessing inputNode
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -410,7 +428,11 @@ class AudioRecorder: ObservableObject {
             sum += sample * sample
         }
 
+        sumOfSquares += Double(sum)
+        totalSamples += frameLength
+
         let rms = sqrt(sum / Float(frameLength))
+        if rms > peakRMS { peakRMS = rms }
         let level = 20 * log10(max(rms, 0.000001))
 
         // Normalize to 0-1 range (using -40dB to 0dB range for less sensitivity)
@@ -449,6 +471,12 @@ class AudioRecorder: ObservableObject {
 
         isRecording = false
         currentLevel = 0
+
+        if totalSamples > 0 {
+            meanRMS = Float(sqrt(sumOfSquares / Double(totalSamples)))
+        } else {
+            meanRMS = 0
+        }
 
         // Verify the file was created
         guard FileManager.default.fileExists(atPath: url.path) else {

@@ -463,6 +463,8 @@ struct OutputSettingsView: View {
 
                 Toggle("Mute system audio while recording", isOn: $appState.muteSystemAudioWhileRecording)
 
+                Toggle("Skip silent recordings", isOn: $appState.skipSilentRecordings)
+
                 Toggle("Limit recording duration", isOn: $appState.recordingDurationLimitEnabled)
 
                 if appState.recordingDurationLimitEnabled {
