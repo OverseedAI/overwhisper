@@ -626,7 +626,56 @@ struct PositionCell: View {
     }
 }
 
+enum DebugTab: String, CaseIterable, Identifiable {
+    case sessions = "Sessions"
+    case logs = "Logs"
+
+    var id: String { rawValue }
+}
+
 struct DebugSettingsView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var selectedTab: DebugTab = .sessions
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("View", selection: $selectedTab) {
+                ForEach(DebugTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            Divider()
+
+            switch selectedTab {
+            case .sessions:
+                DebugSessionsView()
+                    .environmentObject(appState)
+            case .logs:
+                DebugLogsView()
+                    .environmentObject(appState)
+            }
+
+            Divider()
+            HStack {
+                Text("Model: \(appState.whisperModel.rawValue)")
+                Spacer()
+                Text("Engine: \(appState.transcriptionEngine.rawValue)")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(Color.secondary.opacity(0.05))
+        }
+    }
+}
+
+struct DebugLogsView: View {
     @EnvironmentObject var appState: AppState
 
     private let dateFormatter: DateFormatter = {
@@ -637,7 +686,6 @@ struct DebugSettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header with clear button
             if !appState.debugLogs.isEmpty {
                 HStack {
                     Spacer()
@@ -646,7 +694,8 @@ struct DebugSettingsView: View {
                     }
                     .buttonStyle(.bordered)
                 }
-                .padding()
+                .padding(.horizontal)
+                .padding(.vertical, 8)
 
                 Divider()
             }
@@ -672,19 +721,345 @@ struct DebugSettingsView: View {
                 }
                 .listStyle(.plain)
             }
+        }
+    }
+}
 
-            // System info footer
-            Divider()
-            HStack {
-                Text("Model: \(appState.whisperModel.rawValue)")
-                Spacer()
-                Text("Engine: \(appState.transcriptionEngine.rawValue)")
+struct DebugSessionsView: View {
+    @EnvironmentObject var appState: AppState
+    @StateObject private var player = DebugAudioPlayer()
+    @State private var expandedSessionID: UUID?
+
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    private let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    private var sessions: [TranscriptionDebugSession] {
+        appState.debugSessionStore.sessions
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !sessions.isEmpty {
+                HStack(spacing: 8) {
+                    Text("\(sessions.count) recent session\(sessions.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.selectFile(
+                            nil, inFileViewerRootedAtPath: appState.debugSessionStore.rootDirectory.path)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    Button("Clear All") {
+                        player.stop()
+                        appState.debugSessionStore.clear()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+
+                Divider()
             }
-            .font(.caption)
-            .foregroundColor(.secondary)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-            .background(Color.secondary.opacity(0.05))
+
+            if sessions.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "waveform.badge.magnifyingglass")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary)
+                    Text("No sessions yet")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text("Each transcription you run while debug mode is on will be captured here, including its audio file.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(sessions) { session in
+                            DebugSessionRow(
+                                session: session,
+                                isExpanded: expandedSessionID == session.id,
+                                player: player,
+                                store: appState.debugSessionStore,
+                                dateFormatter: dateFormatter,
+                                dayFormatter: dayFormatter,
+                                onToggle: {
+                                    if expandedSessionID == session.id {
+                                        expandedSessionID = nil
+                                    } else {
+                                        expandedSessionID = session.id
+                                    }
+                                }
+                            )
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct DebugSessionRow: View {
+    let session: TranscriptionDebugSession
+    let isExpanded: Bool
+    @ObservedObject var player: DebugAudioPlayer
+    let store: DebugSessionStore
+    let dateFormatter: DateFormatter
+    let dayFormatter: DateFormatter
+    let onToggle: () -> Void
+
+    private var statusColor: Color { session.success ? .green : .red }
+
+    private var audioURL: URL? { store.audioURL(for: session) }
+
+    private var isCurrentlyPlaying: Bool {
+        player.isPlaying && player.currentURL == audioURL
+    }
+
+    private var preview: String {
+        if let error = session.errorMessage, !error.isEmpty { return error }
+        let trimmed = session.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "(empty result)" : trimmed
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: onToggle) {
+                HStack(alignment: .top, spacing: 10) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 8, height: 8)
+                        .padding(.top, 6)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(session.engine)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            Text(session.model)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            if session.usedCloudFallback {
+                                Text("FALLBACK")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.orange)
+                                    .cornerRadius(3)
+                            }
+                            Spacer()
+                            Text(dateFormatter.string(from: session.timestamp))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Text(preview)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(session.success ? .primary : .red)
+                            .lineLimit(isExpanded ? nil : 2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+
+                        HStack(spacing: 12) {
+                            MetricChip(icon: "waveform", label: formatDuration(session.recordingDurationSeconds))
+                            MetricChip(icon: "timer", label: formatLatency(session.latencySeconds))
+                            if let lang = session.language {
+                                MetricChip(icon: "globe", label: lang)
+                            }
+                            if let size = session.audioFileSizeBytes {
+                                MetricChip(icon: "doc", label: formatBytes(size))
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let url = audioURL {
+                        HStack(spacing: 8) {
+                            Button(action: { player.toggle(url: url) }) {
+                                Image(systemName: isCurrentlyPlaying ? "pause.fill" : "play.fill")
+                                    .frame(width: 22, height: 22)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
+
+                            if isCurrentlyPlaying || player.currentURL == url {
+                                ProgressView(value: player.duration > 0 ? player.currentTime / player.duration : 0)
+                                    .progressViewStyle(.linear)
+                                Text("\(formatTime(player.currentTime)) / \(formatTime(player.duration))")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .monospacedDigit()
+                            } else if let dur = session.audioDurationSeconds {
+                                Text(formatTime(dur))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .monospacedDigit()
+                            }
+
+                            Spacer()
+
+                            Button {
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            } label: {
+                                Image(systemName: "folder")
+                            }
+                            .help("Reveal in Finder")
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else if session.audioFileName != nil {
+                        Label("Audio file is missing", systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    } else {
+                        Label("No audio captured for this session", systemImage: "speaker.slash")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    DebugDetailsGrid(session: session, dayFormatter: dayFormatter)
+
+                    HStack {
+                        Spacer()
+                        if !session.transcribedText.isEmpty {
+                            Button("Copy Result") {
+                                let pb = NSPasteboard.general
+                                pb.clearContents()
+                                pb.setString(session.transcribedText, forType: .string)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                        Button(role: .destructive) {
+                            if isCurrentlyPlaying { player.stop() }
+                            store.delete(session)
+                        } label: {
+                            Text("Delete")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .background(Color.secondary.opacity(0.06))
+            }
+        }
+    }
+
+    private func formatLatency(_ seconds: Double) -> String {
+        if seconds < 1 { return String(format: "%.0f ms", seconds * 1000) }
+        return String(format: "%.2f s", seconds)
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        if total >= 60 {
+            return String(format: "%d:%02d", total / 60, total % 60)
+        }
+        return String(format: "%.1fs", seconds)
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let total = Int(seconds)
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+struct MetricChip: View {
+    let icon: String
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.caption2)
+            Text(label)
+                .font(.caption2)
+        }
+        .foregroundColor(.secondary)
+    }
+}
+
+struct DebugDetailsGrid: View {
+    let session: TranscriptionDebugSession
+    let dayFormatter: DateFormatter
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+            detail("When", "\(dayFormatter.string(from: session.timestamp)) at \(timeString)")
+            detail("Engine", session.engine)
+            detail("Model", session.model)
+            detail("Recording", String(format: "%.2fs", session.recordingDurationSeconds))
+            if let dur = session.audioDurationSeconds {
+                detail("Audio", String(format: "%.2fs", dur))
+            }
+            detail("Latency", String(format: "%.3fs", session.latencySeconds))
+            if let lang = session.language {
+                detail("Language", lang)
+            }
+            if session.usedCloudFallback {
+                detail("Fallback", "Yes")
+            }
+            if let size = session.audioFileSizeBytes {
+                detail("File size", ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+            }
+            if let name = session.audioFileName {
+                detail("File", name)
+            }
+        }
+    }
+
+    private var timeString: String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f.string(from: session.timestamp)
+    }
+
+    @ViewBuilder
+    private func detail(_ label: String, _ value: String) -> some View {
+        GridRow {
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .frame(minWidth: 70, alignment: .leading)
+            Text(value)
+                .font(.caption2)
+                .foregroundColor(.primary)
+                .textSelection(.enabled)
         }
     }
 }

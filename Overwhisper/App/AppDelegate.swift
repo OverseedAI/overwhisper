@@ -608,12 +608,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             SystemAudioManager.restoreSystemAudio()
         }
 
+        let recordingDuration = appState.recordingDuration
         appState.stopRecordingTimer()
         appState.recordingState = .transcribing
         overlayWindow.showTranscribing()
 
         Task {
             var audioURL: URL?
+            let engineType = appState.transcriptionEngine
+            let engineLabel = engineType.rawValue
+            let modelLabel = engineType == .openAI
+                ? "OpenAI whisper-1"
+                : "WhisperKit \(appState.whisperModel.rawValue)"
+            let language = appState.language
+            let started = Date()
 
             do {
                 audioURL = try audioRecorder.stopRecording()
@@ -626,19 +634,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     throw TranscriptionError.engineNotInitialized
                 }
 
-                // Log which model is being used
-                let modelInfo = appState.transcriptionEngine == .openAI
-                    ? "OpenAI whisper-1"
-                    : "WhisperKit \(appState.whisperModel.rawValue)"
-                appState.addDebugLog("Starting transcription with \(modelInfo)", source: "Transcription")
+                appState.addDebugLog("Starting transcription with \(modelLabel)", source: "Transcription")
 
                 let text = try await engine.transcribe(audioURL: url)
+                let latency = Date().timeIntervalSince(started)
 
-                // Clean up audio file after successful transcription
-                try? FileManager.default.removeItem(at: url)
+                let finalText = text.isEmpty ? "" : appState.applyTextReplacements(text)
 
-                if !text.isEmpty {
-                    let finalText = appState.applyTextReplacements(text)
+                finalizeAudioFile(
+                    url: url,
+                    engine: engineLabel,
+                    model: modelLabel,
+                    recordingDuration: recordingDuration,
+                    transcribedText: finalText,
+                    latency: latency,
+                    language: language,
+                    errorMessage: nil,
+                    usedCloudFallback: false
+                )
+
+                if !finalText.isEmpty {
                     appState.addTranscriptionHistory(finalText)
                     let didPaste = textInserter.insertText(finalText)
 
@@ -659,17 +674,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 overlayWindow.hide()
 
             } catch {
+                let latency = Date().timeIntervalSince(started)
                 AppLogger.transcription.error("Transcription error: \(error.localizedDescription)")
                 appState.addDebugLog("Transcription failed: \(error.localizedDescription)", source: "Transcription")
 
                 // Try cloud fallback if enabled and we have the audio file
                 let shouldTryFallback = appState.enableCloudFallback
-                    && appState.transcriptionEngine == .whisperKit
+                    && engineType == .whisperKit
                     && !appState.openAIAPIKey.isEmpty
                     && audioURL != nil
 
                 if shouldTryFallback, let url = audioURL {
-                    let fallbackSucceeded = await tryCloudFallback(audioURL: url)
+                    // Record the local failure (without consuming the audio file)
+                    recordSessionMetadata(
+                        engine: engineLabel,
+                        model: modelLabel,
+                        recordingDuration: recordingDuration,
+                        transcribedText: "",
+                        latency: latency,
+                        language: language,
+                        errorMessage: error.localizedDescription,
+                        usedCloudFallback: false
+                    )
+
+                    let fallbackSucceeded = await tryCloudFallback(
+                        audioURL: url,
+                        recordingDuration: recordingDuration,
+                        language: language,
+                        initialError: error.localizedDescription
+                    )
                     if !fallbackSucceeded {
                         appState.recordingState = .error(error.localizedDescription)
                         appState.lastError = error.localizedDescription
@@ -678,10 +711,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                 } else {
-                    // Clean up audio file if no fallback attempted
-                    if let url = audioURL {
-                        try? FileManager.default.removeItem(at: url)
-                    }
+                    finalizeAudioFile(
+                        url: audioURL,
+                        engine: engineLabel,
+                        model: modelLabel,
+                        recordingDuration: recordingDuration,
+                        transcribedText: "",
+                        latency: latency,
+                        language: language,
+                        errorMessage: error.localizedDescription,
+                        usedCloudFallback: false
+                    )
                     appState.recordingState = .error(error.localizedDescription)
                     appState.lastError = error.localizedDescription
                     if appState.showNotificationOnError {
@@ -694,20 +734,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func tryCloudFallback(audioURL: URL) async -> Bool {
+    private func tryCloudFallback(
+        audioURL: URL,
+        recordingDuration: TimeInterval,
+        language: String,
+        initialError: String
+    ) async -> Bool {
         appState.addDebugLog("Attempting cloud fallback with OpenAI", source: "Transcription")
         showNotification(title: "Fallback", body: "Local transcription failed, trying cloud...")
 
+        let started = Date()
         let openAIEngine = OpenAIEngine(apiKey: appState.openAIAPIKey, translateToEnglish: appState.translateToEnglish, customVocabulary: appState.customVocabulary)
 
         do {
             let text = try await openAIEngine.transcribe(audioURL: audioURL)
+            let latency = Date().timeIntervalSince(started)
 
-            // Clean up audio file after successful fallback
-            try? FileManager.default.removeItem(at: audioURL)
+            let finalText = text.isEmpty ? "" : appState.applyTextReplacements(text)
 
-            if !text.isEmpty {
-                let finalText = appState.applyTextReplacements(text)
+            finalizeAudioFile(
+                url: audioURL,
+                engine: "OpenAI API (fallback)",
+                model: "OpenAI whisper-1",
+                recordingDuration: recordingDuration,
+                transcribedText: finalText,
+                latency: latency,
+                language: language,
+                errorMessage: nil,
+                usedCloudFallback: true
+            )
+
+            if !finalText.isEmpty {
                 appState.addTranscriptionHistory(finalText)
                 let didPaste = textInserter.insertText(finalText)
                 appState.addDebugLog("Cloud fallback succeeded", source: "Transcription")
@@ -728,14 +785,80 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return true
 
         } catch {
+            let latency = Date().timeIntervalSince(started)
             AppLogger.transcription.error("Cloud fallback error: \(error.localizedDescription)")
             appState.addDebugLog("Cloud fallback failed: \(error.localizedDescription)", source: "Transcription")
 
-            // Clean up audio file after failed fallback
-            try? FileManager.default.removeItem(at: audioURL)
+            finalizeAudioFile(
+                url: audioURL,
+                engine: "OpenAI API (fallback)",
+                model: "OpenAI whisper-1",
+                recordingDuration: recordingDuration,
+                transcribedText: "",
+                latency: latency,
+                language: language,
+                errorMessage: "Local: \(initialError) — Cloud: \(error.localizedDescription)",
+                usedCloudFallback: true
+            )
 
             return false
         }
+    }
+
+    /// Persists session metadata (and the audio file when debug mode is on) and
+    /// removes the temporary audio file when it isn't needed.
+    private func finalizeAudioFile(
+        url: URL?,
+        engine: String,
+        model: String,
+        recordingDuration: TimeInterval,
+        transcribedText: String,
+        latency: TimeInterval,
+        language: String,
+        errorMessage: String?,
+        usedCloudFallback: Bool
+    ) {
+        if appState.debugModeEnabled {
+            _ = appState.debugSessionStore.record(
+                engine: engine,
+                model: model,
+                sourceAudioURL: url,
+                recordingDuration: recordingDuration,
+                transcribedText: transcribedText,
+                latencySeconds: latency,
+                language: language.isEmpty || language == "auto" ? nil : language,
+                errorMessage: errorMessage,
+                usedCloudFallback: usedCloudFallback
+            )
+        } else if let url {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Records a metadata-only session entry without touching the audio file.
+    /// Used to log a local failure before retrying via cloud fallback.
+    private func recordSessionMetadata(
+        engine: String,
+        model: String,
+        recordingDuration: TimeInterval,
+        transcribedText: String,
+        latency: TimeInterval,
+        language: String,
+        errorMessage: String?,
+        usedCloudFallback: Bool
+    ) {
+        guard appState.debugModeEnabled else { return }
+        _ = appState.debugSessionStore.record(
+            engine: engine,
+            model: model,
+            sourceAudioURL: nil,
+            recordingDuration: recordingDuration,
+            transcribedText: transcribedText,
+            latencySeconds: latency,
+            language: language.isEmpty || language == "auto" ? nil : language,
+            errorMessage: errorMessage,
+            usedCloudFallback: usedCloudFallback
+        )
     }
 
     private func cancelRecording() {

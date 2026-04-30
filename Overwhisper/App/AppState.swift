@@ -344,6 +344,7 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(debugModeEnabled, forKey: "debugModeEnabled") }
     }
     @Published var debugLogs: [DebugLogEntry] = []
+    let debugSessionStore = DebugSessionStore()
     private let maxDebugLogs = 100
 
     // Hotkey recording state - tracks which recorder is active (nil if none)
