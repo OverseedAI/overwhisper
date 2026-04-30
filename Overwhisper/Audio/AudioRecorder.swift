@@ -220,6 +220,20 @@ class AudioRecorder: ObservableObject {
     @Published var currentLevel: Float = 0.0
     @Published var isRecording: Bool = false
 
+    /// Highest per-buffer RMS amplitude (linear, 0..1) observed during the most
+    /// recent recording. Reset on each `startRecording()` call.
+    private(set) var peakRMS: Float = 0
+
+    /// Mean RMS amplitude (linear, 0..1) across the entire most recent recording,
+    /// computed as `sqrt(sumOfSquares / totalFrames)` over the raw mic channel.
+    /// Reset on each `startRecording()` call. Use this — not `peakRMS` — to gate
+    /// silent recordings, because a single mic transient can push peak above any
+    /// threshold even when the bulk of the recording is silence.
+    private(set) var meanRMS: Float = 0
+
+    private var sumOfSquares: Double = 0
+    private var totalSamples: Int = 0
+
     private let sampleRate: Double = 16000  // Whisper optimal
     private let channels: AVAudioChannelCount = 1  // Mono
 
@@ -237,6 +251,11 @@ class AudioRecorder: ObservableObject {
 
     func startRecording() throws {
         guard !isRecording else { return }
+        loggedOnce.removeAll()
+        peakRMS = 0
+        meanRMS = 0
+        sumOfSquares = 0
+        totalSamples = 0
 
         // Check microphone permission before accessing inputNode
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -274,7 +293,11 @@ class AudioRecorder: ObservableObject {
 
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        AppLogger.audio.info(
+            "Recording start — selected device: \(self.selectedInputDeviceID.map(String.init) ?? "system default"), input format: \(inputFormat.sampleRate) Hz, \(inputFormat.channelCount) ch, common=\(inputFormat.commonFormat.rawValue), interleaved=\(inputFormat.isInterleaved)"
+        )
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            AppLogger.audio.error("Invalid input format from audio engine")
             throw AudioRecorderError.invalidFormat
         }
 
@@ -324,6 +347,11 @@ class AudioRecorder: ObservableObject {
         updateAudioLevel(buffer: buffer)
 
         guard let converter = ensureConverter(for: buffer.format, recordingFormat: recordingFormat) else {
+            logOnce("converter-nil") {
+                AppLogger.audio.error(
+                    "Failed to obtain audio converter — buffer format: \(buffer.format), target: \(recordingFormat)"
+                )
+            }
             return
         }
 
@@ -331,6 +359,11 @@ class AudioRecorder: ObservableObject {
         let frameCount = AVAudioFrameCount(Double(buffer.frameLength) * sampleRate / buffer.format.sampleRate)
 
         guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: recordingFormat, frameCapacity: frameCount) else {
+            logOnce("buffer-alloc-failed") {
+                AppLogger.audio.error(
+                    "Failed to allocate converted buffer (frameCount=\(frameCount), format=\(recordingFormat))"
+                )
+            }
             return
         }
 
@@ -340,15 +373,49 @@ class AudioRecorder: ObservableObject {
             return buffer
         }
 
-        converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
+        let status = converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
 
-        if error == nil {
-            do {
-                try audioFile?.write(from: convertedBuffer)
-            } catch {
-                AppLogger.audio.error("Error writing audio buffer: \(error.localizedDescription)")
+        if let error {
+            logOnce("convert-error") {
+                AppLogger.audio.error(
+                    "Audio convert error (status=\(status.rawValue)): \(error.localizedDescription)"
+                )
             }
+            return
         }
+
+        if convertedBuffer.frameLength == 0 {
+            logOnce("convert-empty") {
+                AppLogger.audio.error(
+                    "Converter produced 0 frames (status=\(status.rawValue), input frames=\(buffer.frameLength), input rms=\(self.bufferRMS(buffer)))"
+                )
+            }
+            return
+        }
+
+        do {
+            try audioFile?.write(from: convertedBuffer)
+        } catch {
+            AppLogger.audio.error("Error writing audio buffer: \(error.localizedDescription)")
+        }
+    }
+
+    private var loggedOnce: Set<String> = []
+    private func logOnce(_ key: String, _ action: () -> Void) {
+        guard !loggedOnce.contains(key) else { return }
+        loggedOnce.insert(key)
+        action()
+    }
+
+    private func bufferRMS(_ buffer: AVAudioPCMBuffer) -> Float {
+        guard let channelData = buffer.floatChannelData?[0] else { return -1 }
+        let count = Int(buffer.frameLength)
+        guard count > 0 else { return 0 }
+        var sum: Float = 0
+        for i in 0..<count {
+            sum += channelData[i] * channelData[i]
+        }
+        return sqrt(sum / Float(count))
     }
 
     private func updateAudioLevel(buffer: AVAudioPCMBuffer) {
@@ -361,7 +428,11 @@ class AudioRecorder: ObservableObject {
             sum += sample * sample
         }
 
+        sumOfSquares += Double(sum)
+        totalSamples += frameLength
+
         let rms = sqrt(sum / Float(frameLength))
+        if rms > peakRMS { peakRMS = rms }
         let level = 20 * log10(max(rms, 0.000001))
 
         // Normalize to 0-1 range (using -40dB to 0dB range for less sensitivity)
@@ -400,6 +471,12 @@ class AudioRecorder: ObservableObject {
 
         isRecording = false
         currentLevel = 0
+
+        if totalSamples > 0 {
+            meanRMS = Float(sqrt(sumOfSquares / Double(totalSamples)))
+        } else {
+            meanRMS = 0
+        }
 
         // Verify the file was created
         guard FileManager.default.fileExists(atPath: url.path) else {
@@ -463,6 +540,17 @@ class AudioRecorder: ObservableObject {
 
         guard let newConverter = AVAudioConverter(from: inputFormat, to: recordingFormat) else {
             return nil
+        }
+
+        // For multi-channel input devices (e.g., Scarlett Solo Gen 4 reports as 4 channels:
+        // mic, instrument, loopback L, loopback R), AVAudioConverter's default downmix matrix
+        // can produce silence when downmixing more than 2 channels to mono. Pin the converter
+        // to take only channel 0 (the primary mic input) and drop the rest.
+        if inputFormat.channelCount > 1 && recordingFormat.channelCount == 1 {
+            newConverter.channelMap = [0]
+            AppLogger.audio.info(
+                "Configured converter channel map to [0] for \(inputFormat.channelCount)-ch input"
+            )
         }
 
         converter = newConverter

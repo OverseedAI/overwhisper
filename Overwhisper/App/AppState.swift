@@ -285,6 +285,9 @@ class AppState: ObservableObject {
     @Published var muteSystemAudioWhileRecording: Bool {
         didSet { UserDefaults.standard.set(muteSystemAudioWhileRecording, forKey: "muteSystemAudioWhileRecording") }
     }
+    @Published var skipSilentRecordings: Bool {
+        didSet { UserDefaults.standard.set(skipSilentRecordings, forKey: "skipSilentRecordings") }
+    }
     @Published var selectedInputDeviceUID: String {
         didSet { UserDefaults.standard.set(selectedInputDeviceUID, forKey: "selectedInputDeviceUID") }
     }
@@ -344,6 +347,7 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(debugModeEnabled, forKey: "debugModeEnabled") }
     }
     @Published var debugLogs: [DebugLogEntry] = []
+    let debugSessionStore = DebugSessionStore()
     private let maxDebugLogs = 100
 
     // Hotkey recording state - tracks which recorder is active (nil if none)
@@ -384,6 +388,7 @@ class AppState: ObservableObject {
         self.playSoundOnStart = UserDefaults.standard.bool(forKey: "playSoundOnStart")
         self.showNotificationOnError = UserDefaults.standard.object(forKey: "showNotificationOnError") as? Bool ?? true
         self.muteSystemAudioWhileRecording = UserDefaults.standard.bool(forKey: "muteSystemAudioWhileRecording")
+        self.skipSilentRecordings = UserDefaults.standard.object(forKey: "skipSilentRecordings") as? Bool ?? true
         self.selectedInputDeviceUID = UserDefaults.standard.string(forKey: "selectedInputDeviceUID") ?? ""
         self.recordingDurationLimitEnabled = UserDefaults.standard.bool(forKey: "recordingDurationLimitEnabled")
         let storedLimit = UserDefaults.standard.integer(forKey: "recordingDurationLimitSeconds")
@@ -501,6 +506,7 @@ class AppState: ObservableObject {
         playSoundOnStart = false
         showNotificationOnError = true
         muteSystemAudioWhileRecording = false
+        skipSilentRecordings = true
         selectedInputDeviceUID = ""
         recordingDurationLimitEnabled = false
         recordingDurationLimitSeconds = 60
