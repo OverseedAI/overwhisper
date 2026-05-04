@@ -65,7 +65,9 @@ jobs:
             -archivePath $RUNNER_TEMP/Overwhisper.xcarchive \
             archive \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}"
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES
 
       - name: Export for App Store
         run: |

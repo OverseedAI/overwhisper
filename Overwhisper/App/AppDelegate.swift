@@ -239,6 +239,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        appState.$parakeetModel
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    await self?.initializeTranscriptionEngine()
+                }
+            }
+            .store(in: &cancellables)
+
         appState.$recordingDurationLimitEnabled
             .dropFirst()
             .sink { [weak self] _ in
@@ -471,6 +480,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let engine = WhisperKitEngine(appState: appState, modelManager: modelManager)
             transcriptionEngine = engine  // Assign first so it's available
             await engine.initialize()
+        case .parakeet:
+            let engine = ParakeetEngine(appState: appState)
+            transcriptionEngine = engine
+            do {
+                try await engine.initialize()
+            } catch {
+                AppLogger.app.error("Failed to initialize Parakeet engine: \(error.localizedDescription)")
+                appState.lastError = "Failed to initialize Parakeet: \(error.localizedDescription)"
+            }
         case .openAI:
             transcriptionEngine = OpenAIEngine(apiKey: appState.openAIAPIKey, translateToEnglish: appState.translateToEnglish, customVocabulary: appState.customVocabulary)
         }
@@ -521,6 +539,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 showNoModelAlert()
                 return
             }
+        }
+
+        if appState.transcriptionEngine == .parakeet && !appState.isModelDownloaded {
+            Task {
+                await initializeTranscriptionEngine()
+            }
+            showNotification(title: "Please Wait", body: "Parakeet model is still loading...")
+            return
         }
 
         // Check if OpenAI API key is set when using OpenAI
@@ -617,9 +643,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             var audioURL: URL?
             let engineType = appState.transcriptionEngine
             let engineLabel = engineType.rawValue
-            let modelLabel = engineType == .openAI
-                ? "OpenAI whisper-1"
-                : "WhisperKit \(appState.whisperModel.rawValue)"
+            let modelLabel: String
+            switch engineType {
+            case .whisperKit:
+                modelLabel = "WhisperKit \(appState.whisperModel.rawValue)"
+            case .parakeet:
+                modelLabel = appState.parakeetModel.displayName
+            case .openAI:
+                modelLabel = "OpenAI whisper-1"
+            }
             let language = appState.language
             let started = Date()
 

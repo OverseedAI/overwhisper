@@ -71,6 +71,8 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             ENABLE_HARDENED_RUNTIME=YES
 
       - name: Export Archive (unsigned)

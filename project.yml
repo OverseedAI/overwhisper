@@ -12,6 +12,8 @@ settings:
     MARKETING_VERSION: "1.3.1"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
     SWIFT_VERSION: "5.9"
   configs:
     Release:
@@ -27,6 +29,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle.git
     from: "2.6.0"
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    from: "0.12.4"
 
 targets:
   Overwhisper:
@@ -53,6 +58,7 @@ targets:
       - package: WhisperKit
       - package: HotKey
       - package: Sparkle
+      - package: FluidAudio
     info:
       path: Overwhisper/Info.plist
     entitlements:
