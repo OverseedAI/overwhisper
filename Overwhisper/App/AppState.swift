@@ -77,9 +77,31 @@ enum OverlayPosition: String, CaseIterable, Identifiable {
 
 enum TranscriptionEngineType: String, CaseIterable, Identifiable {
     case whisperKit = "WhisperKit (Local)"
+    case parakeet = "Parakeet (NVIDIA)"
     case openAI = "OpenAI API"
 
     var id: String { rawValue }
+}
+
+enum ParakeetModelType: String, CaseIterable, Identifiable {
+    case v2English = "parakeet-v2"
+    case v3Multilingual = "parakeet-v3"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .v2English: return "Parakeet v2 (English)"
+        case .v3Multilingual: return "Parakeet v3 (Multilingual)"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .v2English: return "English only, high accuracy"
+        case .v3Multilingual: return "25 European languages"
+        }
+    }
 }
 
 enum WhisperModel: String, CaseIterable, Identifiable {
@@ -253,6 +275,9 @@ class AppState: ObservableObject {
     @Published var whisperModel: WhisperModel {
         didSet { UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel") }
     }
+    @Published var parakeetModel: ParakeetModelType {
+        didSet { UserDefaults.standard.set(parakeetModel.rawValue, forKey: "parakeetModel") }
+    }
     @Published var language: String {
         didSet { UserDefaults.standard.set(language, forKey: "language") }
     }
@@ -370,6 +395,9 @@ class AppState: ObservableObject {
 
         let modelStr = UserDefaults.standard.string(forKey: "whisperModel") ?? WhisperModel.smallEn.rawValue
         self.whisperModel = WhisperModel(rawValue: modelStr) ?? .smallEn
+
+        let parakeetModelStr = UserDefaults.standard.string(forKey: "parakeetModel") ?? ParakeetModelType.v3Multilingual.rawValue
+        self.parakeetModel = ParakeetModelType(rawValue: parakeetModelStr) ?? .v3Multilingual
 
         self.language = UserDefaults.standard.string(forKey: "language") ?? "auto"
         self.translateToEnglish = UserDefaults.standard.bool(forKey: "translateToEnglish")
@@ -497,6 +525,7 @@ class AppState: ObservableObject {
         overlayPosition = .bottomRight
         transcriptionEngine = .whisperKit
         whisperModel = .smallEn
+        parakeetModel = .v3Multilingual
         language = "auto"
         translateToEnglish = false
         enableCloudFallback = false

@@ -167,7 +167,15 @@ struct ModelsSettingsView: View {
         appState.transcriptionEngine == .openAI
     }
 
-    private let languages = [
+    private var isUsingParakeet: Bool {
+        appState.transcriptionEngine == .parakeet
+    }
+
+    private var isUsingWhisper: Bool {
+        appState.transcriptionEngine == .whisperKit
+    }
+
+    private let whisperLanguages = [
         ("auto", "Auto-detect"),
         ("en", "English"),
         ("es", "Spanish"),
@@ -182,12 +190,31 @@ struct ModelsSettingsView: View {
         ("ar", "Arabic")
     ]
 
+    private let parakeetLanguages = [
+        ("auto", "Auto-detect"),
+        ("bg", "Bulgarian"),
+        ("hr", "Croatian"),
+        ("cs", "Czech"),
+        ("en", "English"),
+        ("fr", "French"),
+        ("de", "German"),
+        ("it", "Italian"),
+        ("pl", "Polish"),
+        ("pt", "Portuguese"),
+        ("ro", "Romanian"),
+        ("ru", "Russian"),
+        ("sk", "Slovak"),
+        ("sl", "Slovenian"),
+        ("es", "Spanish"),
+        ("uk", "Ukrainian")
+    ]
+
     var body: some View {
         List {
             // Language Selection
             Section {
                 Picker("Language", selection: $appState.language) {
-                    ForEach(languages, id: \.0) { code, name in
+                    ForEach(isUsingParakeet ? parakeetLanguages : whisperLanguages, id: \.0) { code, name in
                         Text(name).tag(code)
                     }
                 }
@@ -198,6 +225,10 @@ struct ModelsSettingsView: View {
             } footer: {
                 if appState.translateToEnglish {
                     Text("Audio will be translated to English. Requires a multilingual model.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else if isUsingParakeet {
+                    Text("Select the language you'll be speaking, or Auto-detect to let the model identify it.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
@@ -296,13 +327,31 @@ struct ModelsSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            // Parakeet Models
+            Section {
+                ForEach(ParakeetModelType.allCases) { modelType in
+                    ParakeetModelRowView(
+                        modelType: modelType,
+                        isSelected: isUsingParakeet && appState.parakeetModel == modelType,
+                        isDownloading: appState.isDownloadingModel && appState.parakeetModel == modelType
+                    )
+                    .environmentObject(appState)
+                }
+            } header: {
+                Text("On-Device — Parakeet")
+            } footer: {
+                Text("Runs locally with NVIDIA Parakeet. v2 is English-only; v3 supports 25 European languages.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             // Local Models - English
             Section {
                 ForEach(WhisperModel.englishModels) { model in
                     ModelRowView(
                         model: model,
                         isDownloaded: appState.downloadedModels.contains(model.rawValue),
-                        isSelected: !isUsingOpenAI && appState.whisperModel == model,
+                        isSelected: isUsingWhisper && appState.whisperModel == model,
                         isDownloading: appState.currentlyDownloadingModel == model.rawValue,
                         downloadProgress: appState.modelDownloadProgress,
                         modelManager: modelManager
@@ -323,7 +372,7 @@ struct ModelsSettingsView: View {
                     ModelRowView(
                         model: model,
                         isDownloaded: appState.downloadedModels.contains(model.rawValue),
-                        isSelected: !isUsingOpenAI && appState.whisperModel == model,
+                        isSelected: isUsingWhisper && appState.whisperModel == model,
                         isDownloading: appState.currentlyDownloadingModel == model.rawValue,
                         downloadProgress: appState.modelDownloadProgress,
                         modelManager: modelManager
@@ -440,6 +489,64 @@ struct ModelRowView: View {
         } message: {
             Text("Are you sure you want to delete \(model.displayName)? You'll need to download it again to use it.")
         }
+    }
+}
+
+struct ParakeetModelRowView: View {
+    @EnvironmentObject var appState: AppState
+    let modelType: ParakeetModelType
+    let isSelected: Bool
+    let isDownloading: Bool
+
+    var body: some View {
+        HStack {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : (isDownloading ? "circle" : "circle.dashed"))
+                .foregroundColor(isSelected ? .accentColor : .primary)
+                .font(.title3)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(modelType.displayName)
+                        .fontWeight(isSelected ? .semibold : .regular)
+
+                    if isSelected {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    }
+                }
+
+                Text(modelType.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if isDownloading {
+                ProgressView()
+                    .scaleEffect(0.7)
+            } else if isSelected {
+                Text("Active")
+                    .font(.caption)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(4)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isSelected {
+                appState.transcriptionEngine = .parakeet
+                appState.parakeetModel = modelType
+                appState.language = "auto"
+            }
+        }
+        .padding(.vertical, 4)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
     }
 }
 

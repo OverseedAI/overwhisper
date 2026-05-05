@@ -12,7 +12,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
         .package(url: "https://github.com/soffes/HotKey.git", from: "0.2.0"),
-        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.5.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.5.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.12.4")
     ],
     targets: [
         .executableTarget(
@@ -20,7 +21,8 @@ let package = Package(
             dependencies: [
                 "WhisperKit",
                 "HotKey",
-                .product(name: "Sparkle", package: "Sparkle")
+                .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "FluidAudio", package: "FluidAudio")
             ],
             path: "Overwhisper",
             exclude: [
