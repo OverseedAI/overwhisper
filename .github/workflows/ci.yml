@@ -24,6 +24,7 @@ jobs:
           xcodebuild -project Overwhisper.xcodeproj \
             -scheme Overwhisper \
             -configuration Debug \
+            -destination "platform=macOS,arch=arm64" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             build
@@ -33,6 +34,7 @@ jobs:
           xcodebuild -project Overwhisper.xcodeproj \
             -scheme Overwhisper \
             -configuration Release \
+            -destination "platform=macOS,arch=arm64" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             build
