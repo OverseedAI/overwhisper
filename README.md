@@ -1,114 +1,125 @@
 # Overwhisper
 
-A native macOS menu bar app for voice transcription using local AI (WhisperKit) with optional cloud API fallback.
+A native macOS menu bar app for voice transcription. Press a global hotkey, speak, and the text is typed at your cursor. Runs locally on-device by default (WhisperKit or Parakeet), with optional OpenAI cloud transcription.
+
+## Download & Install
+
+1. Grab the latest DMG from the [releases page](https://github.com/OverseedAI/overwhisper/releases/latest) — `Overwhisper-X.Y.Z.dmg`.
+2. Open the DMG and drag **Overwhisper.app** into `/Applications`.
+3. Launch it from Applications (or Spotlight). The first launch may show a Gatekeeper prompt — the app is signed and notarized, so just click **Open**.
+4. Grant permissions when prompted:
+   - **Microphone** — required for recording.
+   - **Accessibility** — required for global hotkeys and pasting text at the cursor.
+5. The icon appears in the menu bar (no dock icon). Click it to open Settings and pick a hotkey + model.
+
+Updates are delivered automatically via Sparkle — you'll get a prompt when a new version is available.
+
+### Requirements
+
+- macOS 14.0 (Sonoma) or later
+- Apple Silicon (M1 or newer) — release builds are arm64-only
+- Microphone + Accessibility permissions
 
 ## Features
 
-- **Global Hotkeys**: Configurable system-wide hotkeys for triggering recording
-- **Two Recording Modes**: Push-to-talk (hold to record) or Toggle (press to start/stop)
-- **Local Transcription**: Uses WhisperKit for on-device transcription with Apple Silicon optimization
-- **Cloud Fallback**: Optional OpenAI Whisper API integration for fallback or as primary engine
-- **Visual Overlay**: Floating recording indicator with audio waveform visualization
-- **Direct Text Insertion**: Transcribed text is automatically typed at your cursor position
-
-## Requirements
-
-- macOS 14.0 (Sonoma) or later
-- Apple Silicon Mac (M1/M2/M3) recommended for best WhisperKit performance
-- Microphone access permission
-- Accessibility permission (for global hotkeys and text insertion)
-
-## Building
-
-### Using Swift Package Manager
-
-```bash
-cd Overwhisper
-swift build
-```
-
-### Using Xcode
-
-1. Open the project folder in Xcode
-2. Select Product > Build (⌘B)
-3. Run with Product > Run (⌘R)
-
-## Setup
-
-1. **Launch the app** - Overwhisper will appear in your menu bar
-2. **Grant Permissions**:
-   - Microphone: Required for audio recording
-   - Accessibility: Required for global hotkeys and text insertion
-3. **Configure Hotkey**: Open Settings (⌘,) and set your preferred hotkey
-4. **Choose Model**: Select a WhisperKit model size based on your needs:
-   - **Tiny/Base**: Fastest, lower accuracy
-   - **Small**: Good balance
-   - **Medium/Large**: Best accuracy, slower
+- **Global hotkey** — configurable system-wide shortcut, push-to-talk or toggle.
+- **Local transcription** — choose between [WhisperKit](https://github.com/argmaxinc/WhisperKit) or [Parakeet](https://github.com/FluidInference/FluidAudio) (via FluidAudio), both running on-device on Apple Silicon.
+- **Cloud option** — OpenAI Whisper API as primary engine or fallback.
+- **Recording overlay** — floating indicator with live waveform; configurable position.
+- **Cursor-aware paste** — transcribed text is inserted wherever you're typing.
+- **Auto-updates** — Sparkle handles version checks and installs.
 
 ## Usage
 
-1. Focus on any text input field (Notes, browser, IDE, etc.)
-2. Press your configured hotkey
-3. Speak clearly
-4. Release the hotkey (push-to-talk) or press again (toggle mode)
-5. Wait for transcription
-6. Text is automatically inserted at your cursor
+1. Focus any text field (Notes, browser, Slack, your IDE, etc.).
+2. Press the configured hotkey.
+3. Speak.
+4. Release the hotkey (push-to-talk) or press it again (toggle).
+5. The transcription is pasted at the cursor.
 
 ## Settings
 
-### General
-- **Hotkey**: Global keyboard shortcut to trigger recording
-- **Mode**: Push-to-talk or Toggle
-- **Overlay Position**: Where the recording indicator appears
-- **Start at Login**: Auto-launch on system startup
+- **General** — hotkey, recording mode, overlay position, start at login.
+- **Transcription** — engine (WhisperKit / Parakeet / OpenAI), model size, language, cloud fallback.
+- **Output** — completion sound, error notifications.
+- **Debug** — audio playback, logs.
 
-### Transcription
-- **Engine**: WhisperKit (local) or OpenAI API
-- **Model**: WhisperKit model size (tiny to large)
-- **Language**: Auto-detect or specify language
-- **Cloud Fallback**: Use OpenAI API if local transcription fails
+## Building from Source
 
-### Output
-- **Sound**: Play completion sound
-- **Notifications**: Show error notifications
+Requires Xcode 15+ and the Swift toolchain.
+
+```bash
+just build          # debug build
+just run            # run debug build
+just build-release  # release build
+just bundle         # produce Overwhisper.app
+```
+
+Or directly with SwiftPM:
+
+```bash
+swift build
+swift run Overwhisper
+```
+
+For Xcode: `open Package.swift` (or `open Overwhisper.xcodeproj`).
 
 ## Architecture
+
+Menu bar app with no dock presence. `AppDelegate` coordinates the components:
 
 ```
 Overwhisper/
 ├── App/
-│   ├── OverwhisperApp.swift    # Entry point
-│   ├── AppDelegate.swift        # Menu bar and coordination
-│   └── AppState.swift           # Global state management
+│   ├── OverwhisperApp.swift     # SwiftUI entry point
+│   ├── AppDelegate.swift        # Menu bar + component coordination
+│   ├── AppState.swift           # Observable state, @AppStorage settings
+│   └── CrashReporter.swift
 ├── Audio/
-│   └── AudioRecorder.swift      # AVAudioEngine recording
+│   └── AudioRecorder.swift      # AVAudioEngine, 16kHz mono WAV
 ├── Hotkey/
-│   └── HotkeyManager.swift      # Global hotkey handling
+│   └── HotkeyManager.swift      # Global hotkey via HotKey lib
 ├── Transcription/
-│   ├── TranscriptionEngine.swift # Protocol
-│   ├── WhisperKitEngine.swift   # Local AI transcription
-│   ├── OpenAIEngine.swift       # Cloud API transcription
-│   └── ModelManager.swift       # Model downloading/management
+│   ├── TranscriptionEngine.swift  # Protocol
+│   ├── WhisperKitEngine.swift     # Local (WhisperKit)
+│   ├── ParakeetEngine.swift       # Local (FluidAudio / Parakeet)
+│   ├── OpenAIEngine.swift         # Cloud (OpenAI API)
+│   └── ModelManager.swift         # Model download / cache management
 ├── Output/
-│   └── TextInserter.swift       # Clipboard + paste insertion
-└── UI/
-    ├── OverlayWindow.swift      # Floating NSPanel
-    ├── OverlayView.swift        # SwiftUI recording animation
-    └── SettingsView.swift       # Settings interface
+│   └── TextInserter.swift       # Clipboard + synthetic Cmd+V
+├── UI/
+│   ├── OverlayWindow.swift      # Floating NSPanel
+│   ├── OverlayView.swift        # Recording animation
+│   ├── SettingsView.swift       # Tabbed settings
+│   ├── OnboardingView.swift
+│   ├── MenuBarIcon.swift
+│   └── DebugAudioPlayer.swift
+├── Logging/
+└── Resources/
 ```
+
+### Recording flow
+
+1. `HotkeyManager` detects the global hotkey and notifies `AppDelegate`.
+2. `AudioRecorder` captures mic input (AVAudioEngine, 16 kHz mono WAV).
+3. `OverlayWindow` displays the recording indicator with a live waveform.
+4. On stop, the WAV is handed to the selected `TranscriptionEngine`.
+5. `TextInserter` pastes the result via clipboard + synthetic Cmd+V.
 
 ## Dependencies
 
-- [WhisperKit](https://github.com/argmaxinc/WhisperKit) - Local Whisper transcription
-- [HotKey](https://github.com/soffes/HotKey) - Global hotkey handling
+- [WhisperKit](https://github.com/argmaxinc/WhisperKit) — local Whisper transcription
+- [FluidAudio](https://github.com/FluidInference/FluidAudio) — Parakeet engine
+- [HotKey](https://github.com/soffes/HotKey) — global hotkey handling
+- [Sparkle](https://github.com/sparkle-project/Sparkle) — auto-updates
 
 ## Privacy
 
-- All audio processing happens locally on your device when using WhisperKit
-- Audio files are temporary and deleted after transcription
-- OpenAI API key is stored securely in macOS Keychain
-- No data is collected or transmitted except when using the OpenAI API option
+- Audio stays on-device when using WhisperKit or Parakeet.
+- Recordings are written to a temp file and deleted right after transcription.
+- The OpenAI API key (if you use one) is stored in the macOS Keychain.
+- Nothing is collected or transmitted except audio sent to OpenAI when that engine is selected.
 
 ## License
 
-MIT License
+MIT — see [LICENSE](LICENSE).
