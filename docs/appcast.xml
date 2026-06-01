@@ -6,6 +6,18 @@
     <description>Most recent updates to Overwhisper</description>
     <language>en</language>
     <item>
+  <title>Version 1.4.0</title>
+  <pubDate>Mon, 01 Jun 2026 18:47:28 +0000</pubDate>
+  <sparkle:version>37</sparkle:version>
+  <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
+  <enclosure
+    url="https://github.com/OverseedAI/overwhisper/releases/download/v1.4.0/Overwhisper-1.4.0.dmg"
+    length="6920550"
+    type="application/octet-stream"
+    sparkle:edSignature="9yns8FaR6vodS9V+j2ae6o7fKm4fAw/SyhUKmgzrTh0zSO2k5O1oTl656mLfnAxyMeoPkLhJssilPFHcpIuMDA=="
+  />
+</item>
+    <item>
   <title>Version 1.3.1</title>
   <pubDate>Mon, 04 May 2026 02:27:15 +0000</pubDate>
   <sparkle:version>35</sparkle:version>
