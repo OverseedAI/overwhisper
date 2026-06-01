@@ -67,6 +67,7 @@ jobs:
             -scheme $SCHEME \
             -destination "generic/platform=macOS" \
             -archivePath $RUNNER_TEMP/Overwhisper.xcarchive \
+            ARCHS=arm64 \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
