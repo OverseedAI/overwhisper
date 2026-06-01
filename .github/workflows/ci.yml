@@ -27,6 +27,8 @@ jobs:
             -destination "platform=macOS,arch=arm64" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             build
 
       - name: Build Release (unsigned)
@@ -37,4 +39,6 @@ jobs:
             -destination "platform=macOS,arch=arm64" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             build
