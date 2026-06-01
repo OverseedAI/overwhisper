@@ -13,6 +13,7 @@
 		3C20ABADE932477FE5057996 /* TextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AACBA6521305AC62E4D5F08 /* TextInserter.swift */; };
 		45DEEB1F5F15330C4CBBF295 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0EF1327337992F9B5CA01B /* AudioRecorder.swift */; };
 		499C110B6DB281C2763EF5FA /* DebugAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 605F07BD195AAE4FEA3C5F44 /* DebugAudioPlayer.swift */; };
+		6DD1BCF8D745B4C56672FEEF /* ParakeetEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B793ED0D22A05339538F0BA7 /* ParakeetEngine.swift */; };
 		70FA1EA74756D7D320D285E1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = FCE79557B30B53B7AB17AE32 /* Sparkle */; };
 		7D180EF2BEA910E301CCFF11 /* OverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F33FBAA55580AA9161076B3F /* OverlayView.swift */; };
 		8A57D64071EE9382870A168A /* HotKey in Frameworks */ = {isa = PBXBuildFile; productRef = 9A4FF0B4B24B9C3208107118 /* HotKey */; };
@@ -20,6 +21,7 @@
 		A29C2673D8311037884AC6DD /* OverwhisperApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2AB0D6F62E0EBA98666314F /* OverwhisperApp.swift */; };
 		A5CC058DCB44FF020BCAA97B /* OverlayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84D3ACF14A29AD5B7BF37B1 /* OverlayWindow.swift */; };
 		AA5001D76C50DA98C10D640F /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27FA5B6D32A74360C3778DFC /* TranscriptionEngine.swift */; };
+		B86603C770C16FF8B3A37462 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 18206C0CCC86F03F6ACDB919 /* FluidAudio */; };
 		B73CD4C608E49C7EF1D8E304 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 761523080B992A3D3E66DE0D /* WhisperKit */; };
 		C1D778331DBD91B16B89EE54 /* WhisperKitEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F51FC25B877C421AA6475AC /* WhisperKitEngine.swift */; };
 		CD6A803C535173D80F3D6A95 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B6842920F60C2FDB7C2A90 /* SettingsView.swift */; };
@@ -48,6 +50,7 @@
 		AA0EF1327337992F9B5CA01B /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		B0E48F8B713B09791DAA3D85 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
 		B2AB0D6F62E0EBA98666314F /* OverwhisperApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverwhisperApp.swift; sourceTree = "<group>"; };
+		B793ED0D22A05339538F0BA7 /* ParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetEngine.swift; sourceTree = "<group>"; };
 		B981A16BEA9D881C03169846 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D84D3ACF14A29AD5B7BF37B1 /* OverlayWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindow.swift; sourceTree = "<group>"; };
 		E2D26A49BA97420C7B9784D5 /* OpenAIEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIEngine.swift; sourceTree = "<group>"; };
@@ -64,6 +67,7 @@
 				B73CD4C608E49C7EF1D8E304 /* WhisperKit in Frameworks */,
 				8A57D64071EE9382870A168A /* HotKey in Frameworks */,
 				70FA1EA74756D7D320D285E1 /* Sparkle in Frameworks */,
+				B86603C770C16FF8B3A37462 /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -163,6 +167,7 @@
 			children = (
 				756F6B9208C887A594813A6B /* ModelManager.swift */,
 				E2D26A49BA97420C7B9784D5 /* OpenAIEngine.swift */,
+				B793ED0D22A05339538F0BA7 /* ParakeetEngine.swift */,
 				27FA5B6D32A74360C3778DFC /* TranscriptionEngine.swift */,
 				3F51FC25B877C421AA6475AC /* WhisperKitEngine.swift */,
 			);
@@ -197,6 +202,7 @@
 				761523080B992A3D3E66DE0D /* WhisperKit */,
 				9A4FF0B4B24B9C3208107118 /* HotKey */,
 				FCE79557B30B53B7AB17AE32 /* Sparkle */,
+				18206C0CCC86F03F6ACDB919 /* FluidAudio */,
 			);
 			productName = Overwhisper;
 			productReference = 82812CE441C897C9A14857B0 /* Overwhisper.app */;
@@ -226,6 +232,7 @@
 			mainGroup = 3F7C849BE191D0726B1878D8;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				9A1EB69531E3CAD3C80658F7 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 				681EAAEEFA2C695A3644ED8D /* XCRemoteSwiftPackageReference "HotKey" */,
 				A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				8EC2D1C4B288D69480479AFB /* XCRemoteSwiftPackageReference "WhisperKit" */,
@@ -271,6 +278,7 @@
 				7D180EF2BEA910E301CCFF11 /* OverlayView.swift in Sources */,
 				A5CC058DCB44FF020BCAA97B /* OverlayWindow.swift in Sources */,
 				A29C2673D8311037884AC6DD /* OverwhisperApp.swift in Sources */,
+				6DD1BCF8D745B4C56672FEEF /* ParakeetEngine.swift in Sources */,
 				CD6A803C535173D80F3D6A95 /* SettingsView.swift in Sources */,
 				3C20ABADE932477FE5057996 /* TextInserter.swift in Sources */,
 				AA5001D76C50DA98C10D640F /* TranscriptionEngine.swift in Sources */,
@@ -285,6 +293,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -330,9 +339,10 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.3.1;
+				MARKETING_VERSION = 1.4.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -345,6 +355,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -395,7 +406,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.3.1;
+				MARKETING_VERSION = 1.4.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -475,6 +486,14 @@
 				minimumVersion = 0.9.0;
 			};
 		};
+		9A1EB69531E3CAD3C80658F7 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.12.4;
+			};
+		};
 		A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
@@ -486,6 +505,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		18206C0CCC86F03F6ACDB919 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9A1EB69531E3CAD3C80658F7 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
 		761523080B992A3D3E66DE0D /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8EC2D1C4B288D69480479AFB /* XCRemoteSwiftPackageReference "WhisperKit" */;

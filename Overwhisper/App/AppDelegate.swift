@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var modelManager: ModelManager!
     private var settingsWindow: NSWindow?
     private var recordingMenuItem: NSMenuItem?
+    private var engineMenuItem: NSMenuItem?
     private var errorSeparatorItem: NSMenuItem?
     private var errorMenuItem: NSMenuItem?
     private var onboardingWindow: NSWindow?
@@ -106,6 +107,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let builtByItem = NSMenuItem(title: "Built by Hal Shin", action: nil, keyEquivalent: "")
         builtByItem.isEnabled = false
         menu.addItem(builtByItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let engineItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        engineItem.isEnabled = false
+        menu.addItem(engineItem)
+        self.engineMenuItem = engineItem
+        updateEngineMenuItem()
 
         menu.addItem(NSMenuItem.separator())
 
@@ -225,6 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak self] _ in
                 Task { @MainActor in
+                    self?.updateEngineMenuItem()
                     await self?.initializeTranscriptionEngine()
                 }
             }
@@ -234,6 +244,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak self] _ in
                 Task { @MainActor in
+                    self?.updateEngineMenuItem()
+                    await self?.initializeTranscriptionEngine()
+                }
+            }
+            .store(in: &cancellables)
+
+        appState.$parakeetModel
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.updateEngineMenuItem()
                     await self?.initializeTranscriptionEngine()
                 }
             }
@@ -314,6 +335,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         isLoadingAnimation = false
     }
 
+    private func updateEngineMenuItem() {
+        guard let item = engineMenuItem else { return }
+        let label: String
+        switch appState.transcriptionEngine {
+        case .whisperKit:
+            label = "WhisperKit · \(appState.whisperModel.rawValue)"
+        case .parakeet:
+            label = "Parakeet · \(appState.parakeetModel == .v2English ? "v2 English" : "v3 Multilingual")"
+        case .openAI:
+            label = "OpenAI · whisper-1"
+        }
+        item.title = "Engine: \(label)"
+    }
+
     private func updateMenu(for state: RecordingState) {
         guard let recordingItem = recordingMenuItem else { return }
 
@@ -385,7 +420,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Permission not yet granted, the system dialog is now showing
             // We don't need to do anything else here - the user will grant
             // permission in System Settings
-            appState.addDebugLog("Accessibility permission requested", source: "Permissions")
         }
     }
 
@@ -471,6 +505,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let engine = WhisperKitEngine(appState: appState, modelManager: modelManager)
             transcriptionEngine = engine  // Assign first so it's available
             await engine.initialize()
+        case .parakeet:
+            let engine = ParakeetEngine(appState: appState)
+            transcriptionEngine = engine
+            do {
+                try await engine.initialize()
+            } catch {
+                AppLogger.app.error("Failed to initialize Parakeet engine: \(error.localizedDescription)")
+                appState.lastError = "Failed to initialize Parakeet: \(error.localizedDescription)"
+            }
         case .openAI:
             transcriptionEngine = OpenAIEngine(apiKey: appState.openAIAPIKey, translateToEnglish: appState.translateToEnglish, customVocabulary: appState.customVocabulary)
         }
@@ -521,6 +564,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 showNoModelAlert()
                 return
             }
+        }
+
+        if appState.transcriptionEngine == .parakeet
+            && !appState.parakeetDownloadedModels.contains(appState.parakeetModel.rawValue) {
+            if !appState.isDownloadingModel {
+                Task { await initializeTranscriptionEngine() }
+            }
+            showNotification(title: "Please Wait", body: "Parakeet model is still loading...")
+            return
         }
 
         // Check if OpenAI API key is set when using OpenAI
@@ -617,9 +669,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             var audioURL: URL?
             let engineType = appState.transcriptionEngine
             let engineLabel = engineType.rawValue
-            let modelLabel = engineType == .openAI
-                ? "OpenAI whisper-1"
-                : "WhisperKit \(appState.whisperModel.rawValue)"
+            let modelLabel: String
+            switch engineType {
+            case .whisperKit:
+                modelLabel = "WhisperKit \(appState.whisperModel.rawValue)"
+            case .parakeet:
+                modelLabel = appState.parakeetModel.displayName
+            case .openAI:
+                modelLabel = "OpenAI whisper-1"
+            }
             let language = appState.language
             let started = Date()
 
@@ -637,10 +695,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let peakDb = AppDelegate.dbFromRMS(peakRMS)
                     AppLogger.audio.info(
                         "Skipping silent recording — mean RMS \(meanRMS) (\(meanDb) dBFS, peak \(peakDb) dBFS) below threshold \(AppDelegate.silenceThresholdDb) dBFS"
-                    )
-                    appState.addDebugLog(
-                        String(format: "Skipped silent recording (mean %.1f dBFS, peak %.1f dBFS)", meanDb, peakDb),
-                        source: "Transcription"
                     )
 
                     let latency = Date().timeIntervalSince(started)
@@ -665,16 +719,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     throw TranscriptionError.engineNotInitialized
                 }
 
-                appState.addDebugLog("Starting transcription with \(modelLabel)", source: "Transcription")
-
                 let text = try await engine.transcribe(audioURL: url)
                 let latency = Date().timeIntervalSince(started)
 
                 let cleaned = AppDelegate.stripNonSpeechAnnotations(text)
-                if !text.isEmpty && cleaned.isEmpty {
-                    appState.addDebugLog(
-                        "Skipped non-speech annotation: \(text)", source: "Transcription")
-                }
                 let finalText = cleaned.isEmpty ? "" : appState.applyTextReplacements(cleaned)
 
                 finalizeAudioFile(
@@ -712,7 +760,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 let latency = Date().timeIntervalSince(started)
                 AppLogger.transcription.error("Transcription error: \(error.localizedDescription)")
-                appState.addDebugLog("Transcription failed: \(error.localizedDescription)", source: "Transcription")
 
                 // Try cloud fallback if enabled and we have the audio file
                 let shouldTryFallback = appState.enableCloudFallback
@@ -721,18 +768,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     && audioURL != nil
 
                 if shouldTryFallback, let url = audioURL {
-                    // Record the local failure (without consuming the audio file)
-                    recordSessionMetadata(
-                        engine: engineLabel,
-                        model: modelLabel,
-                        recordingDuration: recordingDuration,
-                        transcribedText: "",
-                        latency: latency,
-                        language: language,
-                        errorMessage: error.localizedDescription,
-                        usedCloudFallback: false
-                    )
-
                     let fallbackSucceeded = await tryCloudFallback(
                         audioURL: url,
                         recordingDuration: recordingDuration,
@@ -776,7 +811,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         language: String,
         initialError: String
     ) async -> Bool {
-        appState.addDebugLog("Attempting cloud fallback with OpenAI", source: "Transcription")
         showNotification(title: "Fallback", body: "Local transcription failed, trying cloud...")
 
         let started = Date()
@@ -787,10 +821,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let latency = Date().timeIntervalSince(started)
 
             let cleaned = AppDelegate.stripNonSpeechAnnotations(text)
-            if !text.isEmpty && cleaned.isEmpty {
-                appState.addDebugLog(
-                    "Skipped non-speech annotation (fallback): \(text)", source: "Transcription")
-            }
             let finalText = cleaned.isEmpty ? "" : appState.applyTextReplacements(cleaned)
 
             finalizeAudioFile(
@@ -808,7 +838,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !finalText.isEmpty {
                 appState.addTranscriptionHistory(finalText)
                 let didPaste = textInserter.insertText(finalText)
-                appState.addDebugLog("Cloud fallback succeeded", source: "Transcription")
 
                 if didPaste {
                     if appState.playSoundOnCompletion {
@@ -828,7 +857,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             let latency = Date().timeIntervalSince(started)
             AppLogger.transcription.error("Cloud fallback error: \(error.localizedDescription)")
-            appState.addDebugLog("Cloud fallback failed: \(error.localizedDescription)", source: "Transcription")
 
             finalizeAudioFile(
                 url: audioURL,
@@ -846,8 +874,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Persists session metadata (and the audio file when debug mode is on) and
-    /// removes the temporary audio file when it isn't needed.
     private func finalizeAudioFile(
         url: URL?,
         engine: String,
@@ -859,40 +885,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         errorMessage: String?,
         usedCloudFallback: Bool
     ) {
-        if appState.debugModeEnabled {
-            _ = appState.debugSessionStore.record(
-                engine: engine,
-                model: model,
-                sourceAudioURL: url,
-                recordingDuration: recordingDuration,
-                transcribedText: transcribedText,
-                latencySeconds: latency,
-                language: language.isEmpty || language == "auto" ? nil : language,
-                errorMessage: errorMessage,
-                usedCloudFallback: usedCloudFallback
-            )
-        } else if let url {
-            try? FileManager.default.removeItem(at: url)
-        }
-    }
-
-    /// Records a metadata-only session entry without touching the audio file.
-    /// Used to log a local failure before retrying via cloud fallback.
-    private func recordSessionMetadata(
-        engine: String,
-        model: String,
-        recordingDuration: TimeInterval,
-        transcribedText: String,
-        latency: TimeInterval,
-        language: String,
-        errorMessage: String?,
-        usedCloudFallback: Bool
-    ) {
-        guard appState.debugModeEnabled else { return }
         _ = appState.debugSessionStore.record(
             engine: engine,
             model: model,
-            sourceAudioURL: nil,
+            sourceAudioURL: url,
             recordingDuration: recordingDuration,
             transcribedText: transcribedText,
             latencySeconds: latency,

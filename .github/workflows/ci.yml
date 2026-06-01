@@ -24,8 +24,11 @@ jobs:
           xcodebuild -project Overwhisper.xcodeproj \
             -scheme Overwhisper \
             -configuration Debug \
+            -destination "platform=macOS,arch=arm64" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             build
 
       - name: Build Release (unsigned)
@@ -33,6 +36,9 @@ jobs:
           xcodebuild -project Overwhisper.xcodeproj \
             -scheme Overwhisper \
             -configuration Release \
+            -destination "platform=macOS,arch=arm64" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             build
