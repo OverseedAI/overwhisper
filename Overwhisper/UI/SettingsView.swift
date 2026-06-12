@@ -726,6 +726,16 @@ struct HistorySettingsView: View {
                 }
             }
         }
+        // Switching to another settings tab tears the view down normally…
+        .onDisappear { player.stop() }
+        // …but closing the window doesn't: it's kept alive (isReleasedWhenClosed
+        // = false) and just ordered out, so onDisappear never fires. Catch the
+        // close itself and stop playback.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
+            if (note.object as? NSWindow)?.title == "Overwhisper Settings" {
+                player.stop()
+            }
+        }
     }
 }
 
