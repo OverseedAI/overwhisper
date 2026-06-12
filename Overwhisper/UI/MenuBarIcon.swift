@@ -19,6 +19,17 @@ enum MenuBarIcon {
     /// Number of loading animation frames (dots: 1, 2, 3)
     static let loadingFrameCount = 3
 
+    /// Marks dev builds with a small dot in the top-left corner — the bottom
+    /// edge is already used by the loading/transcribing dots and error mark.
+    private static func drawDevBadgeIfNeeded(in rect: NSRect) {
+        guard AppEnvironment.isDevBuild else { return }
+
+        let badgeSize: CGFloat = 3.5
+        let badgeRect = NSRect(x: 0, y: rect.height - badgeSize, width: badgeSize, height: badgeSize)
+        NSColor.black.setFill()
+        NSBezierPath(ovalIn: badgeRect).fill()
+    }
+
     /// Draws bars centered vertically in the rect
     private static func drawBarsCentered(in rect: NSRect, heights: [CGFloat], barWidth: CGFloat = 2, spacing: CGFloat = 1.5, maxHeight: CGFloat? = nil) {
         let barCount = heights.count
@@ -62,6 +73,7 @@ enum MenuBarIcon {
     static func create(size: CGFloat = 18) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             drawBarsCentered(in: rect, heights: idleHeights)
+            drawDevBadgeIfNeeded(in: rect)
             return true
         }
         image.isTemplate = true
@@ -73,6 +85,7 @@ enum MenuBarIcon {
         let heights = recordingFrames[frameIndex % recordingFrames.count]
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             drawBarsCentered(in: rect, heights: heights)
+            drawDevBadgeIfNeeded(in: rect)
             return true
         }
         image.isTemplate = true
@@ -104,6 +117,7 @@ enum MenuBarIcon {
                 dotPath.fill()
             }
 
+            drawDevBadgeIfNeeded(in: rect)
             return true
         }
         image.isTemplate = true
@@ -133,6 +147,7 @@ enum MenuBarIcon {
                 dotPath.fill()
             }
 
+            drawDevBadgeIfNeeded(in: rect)
             return true
         }
         image.isTemplate = true
@@ -168,6 +183,7 @@ enum MenuBarIcon {
             let dotPath = NSBezierPath(ovalIn: dotRect)
             dotPath.fill()
 
+            drawDevBadgeIfNeeded(in: rect)
             return true
         }
         image.isTemplate = true

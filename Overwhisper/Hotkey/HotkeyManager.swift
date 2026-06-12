@@ -55,7 +55,11 @@ class HotkeyManager {
         toggleHotKey?.keyDownHandler = { [weak self] in
             self?.eventHandler(.keyDown, .toggle)
         }
-        // Toggle mode doesn't need keyUp
+
+        // keyUp lets the toggle hotkey double as push-to-talk when held
+        toggleHotKey?.keyUpHandler = { [weak self] in
+            self?.eventHandler(.keyUp, .toggle)
+        }
     }
 
     func registerPushToTalkHotkey(config: HotkeyConfig) {

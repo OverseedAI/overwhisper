@@ -1,15 +1,21 @@
 import AppKit
 import SwiftUI
 
+// Lets the cancel button respond to the first click even though the
+// panel never becomes key (it's a nonactivating overlay).
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 class OverlayWindow: NSPanel {
     private let appState: AppState
     private var hostingView: NSHostingView<OverlayView>?
 
-    init(appState: AppState) {
+    init(appState: AppState, onCancel: @escaping () -> Void) {
         self.appState = appState
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 220, height: 90),
+            contentRect: NSRect(x: 0, y: 0, width: 220, height: 108),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -25,8 +31,8 @@ class OverlayWindow: NSPanel {
         self.hidesOnDeactivate = false
 
         // Set up the SwiftUI content
-        let overlayView = OverlayView(appState: appState)
-        let hostingView = NSHostingView(rootView: overlayView)
+        let overlayView = OverlayView(appState: appState, onCancel: onCancel)
+        let hostingView = FirstMouseHostingView(rootView: overlayView)
         hostingView.frame = self.contentView?.bounds ?? .zero
         hostingView.autoresizingMask = [.width, .height]
         self.contentView = hostingView

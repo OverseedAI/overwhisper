@@ -47,7 +47,7 @@ struct GeneralSettingsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Toggle")
                                 .fontWeight(.medium)
-                            Text("Press once to start, again to stop")
+                            Text("Tap to start/stop · hold to talk, release to transcribe")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }

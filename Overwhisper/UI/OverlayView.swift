@@ -2,9 +2,17 @@ import SwiftUI
 
 struct OverlayView: View {
     @ObservedObject var appState: AppState
+    var onCancel: () -> Void = {}
+
+    private var isCancellable: Bool {
+        switch appState.recordingState {
+        case .recording, .transcribing: return true
+        case .idle, .error: return false
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             switch appState.recordingState {
             case .recording:
                 RecordingView(
@@ -18,9 +26,14 @@ struct OverlayView: View {
             case .idle:
                 EmptyView()
             }
+
+            if isCancellable {
+                CancelHintView(onCancel: onCancel)
+            }
         }
-        .padding(16)
-        .frame(width: 220, height: 90)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(width: 220, height: 108)
         .background(
             VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -29,6 +42,28 @@ struct OverlayView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
+    }
+}
+
+struct CancelHintView: View {
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack {
+            Text("esc to cancel")
+                .font(.caption2)
+                .foregroundColor(.secondary.opacity(0.8))
+
+            Spacer()
+
+            Button(action: onCancel) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Cancel")
+        }
     }
 }
 
@@ -174,6 +209,7 @@ struct WaveformBar: View {
 
 struct TranscribingView: View {
     @State private var isAnimating = false
+    @State private var startedAt = Date()
 
     var body: some View {
         VStack(spacing: 12) {
@@ -188,6 +224,13 @@ struct TranscribingView: View {
                     .foregroundColor(.primary)
 
                 Spacer()
+
+                // Elapsed time so a long transcription doesn't look hung
+                TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                    Text(Self.formatElapsed(context.date.timeIntervalSince(startedAt)))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
             }
 
             // Animated dots
@@ -209,7 +252,13 @@ struct TranscribingView: View {
         }
         .onAppear {
             isAnimating = true
+            startedAt = Date()
         }
+    }
+
+    private static func formatElapsed(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 

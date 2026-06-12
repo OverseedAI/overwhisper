@@ -5,6 +5,11 @@ import Combine
 import UserNotifications
 import Sparkle
 
+enum AppEnvironment {
+    /// True when running outside a real .app bundle (swift run / bare .build binary).
+    static let isDevBuild = Bundle.main.bundleIdentifier == nil
+}
+
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
@@ -24,19 +29,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var engineMenuItem: NSMenuItem?
     private var errorSeparatorItem: NSMenuItem?
     private var errorMenuItem: NSMenuItem?
+    private var retryMenuItem: NSMenuItem?
+    private var recentMenu: NSMenu?
+    private var copyLastMenuItem: NSMenuItem?
+    private var lastFailedSession: TranscriptionDebugSession?
     private var onboardingWindow: NSWindow?
     private var recordingLimitTimer: Timer?
 
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
+    private var transcriptionTask: Task<Void, Never>?
     private var escapeKeyMonitor: Any?
+    private var errorResetTimer: Timer?
+
+    // Tap-vs-hold on the toggle hotkey: tap toggles, holding past the
+    // threshold acts as push-to-talk (release stops and transcribes).
+    private static let tapHoldThreshold: TimeInterval = 0.5
+    private var toggleKeyDownAt: Date?
+    private var toggleKeyDownStartedRecording = false
     private var iconAnimationTimer: Timer?
     private var iconAnimationFrame: Int = 0
     private var isLoadingAnimation: Bool = false
 
     override init() {
-        // Initialize Sparkle updater
-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        // Sparkle can't start without a real app bundle — starting it from a
+        // bare dev binary throws up a "failed to start updater" alert.
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: !AppEnvironment.isDevBuild,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
         super.init()
     }
 
@@ -51,11 +73,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupComponents()
         setupBindings()
         setupSleepWakeHandling()
+        setupEscapeKeyMonitor()
 
         showOnboardingIfNeeded()
 
-        // Initialize transcription engine
-        Task {
+        launchEngineInitialization()
+    }
+
+    private func launchEngineInitialization() {
+        initializationTask = Task {
             await initializeTranscriptionEngine()
         }
     }
@@ -98,9 +124,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+        // Enabled state is managed manually throughout (recording/transcribing/loading).
+        menu.autoenablesItems = false
 
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
-        let versionItem = NSMenuItem(title: "Overwhisper v\(version)", action: nil, keyEquivalent: "")
+        let versionTitle: String
+        if AppEnvironment.isDevBuild {
+            versionTitle = "Overwhisper · dev build"
+        } else {
+            let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+            versionTitle = "Overwhisper v\(version)"
+        }
+        let versionItem = NSMenuItem(title: versionTitle, action: nil, keyEquivalent: "")
         versionItem.isEnabled = false
         menu.addItem(versionItem)
 
@@ -123,6 +157,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(recordingItem)
         self.recordingMenuItem = recordingItem
 
+        let retryItem = NSMenuItem(title: "Retry Last Transcription", action: #selector(retryLastTranscription), keyEquivalent: "")
+        retryItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Retry")
+        retryItem.isHidden = true
+        menu.addItem(retryItem)
+        self.retryMenuItem = retryItem
+
+        menu.addItem(NSMenuItem.separator())
+
+        let recentItem = NSMenuItem(title: "Recent Transcriptions", action: nil, keyEquivalent: "")
+        recentItem.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "Recent")
+        let recentSubmenu = NSMenu()
+        recentSubmenu.autoenablesItems = false
+        recentItem.submenu = recentSubmenu
+        menu.addItem(recentItem)
+        self.recentMenu = recentSubmenu
+
+        let copyLastItem = NSMenuItem(title: "Copy Last Transcription", action: #selector(copyLastTranscription), keyEquivalent: "")
+        copyLastItem.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy")
+        menu.addItem(copyLastItem)
+        self.copyLastMenuItem = copyLastItem
+
         let errorSeparator = NSMenuItem.separator()
         errorSeparator.isHidden = true
         menu.addItem(errorSeparator)
@@ -136,21 +191,70 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let updateItem = NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "")
-        updateItem.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: "Update")
-        menu.addItem(updateItem)
+        if !AppEnvironment.isDevBuild {
+            let updateItem = NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "")
+            updateItem.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: "Update")
+            menu.addItem(updateItem)
+        }
 
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Overwhisper", action: #selector(quitApp), keyEquivalent: "q"))
 
         statusItem.menu = menu
+
+        rebuildRecentMenu(with: appState.transcriptionHistory)
+    }
+
+    private func rebuildRecentMenu(with history: [TranscriptionHistoryEntry]) {
+        guard let recentMenu else { return }
+        recentMenu.removeAllItems()
+
+        let entries = history.prefix(10)
+        if entries.isEmpty {
+            let empty = NSMenuItem(title: "No transcriptions yet", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            recentMenu.addItem(empty)
+        } else {
+            for entry in entries {
+                let item = NSMenuItem(title: Self.menuPreview(for: entry.text), action: #selector(copyHistoryEntry(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = entry.text
+                item.toolTip = entry.text
+                recentMenu.addItem(item)
+            }
+        }
+
+        copyLastMenuItem?.isEnabled = !history.isEmpty
+    }
+
+    private static func menuPreview(for text: String) -> String {
+        let collapsed = text.replacingOccurrences(of: "\n", with: " ")
+        return collapsed.count > 60 ? "\(collapsed.prefix(57))..." : collapsed
+    }
+
+    @objc private func copyHistoryEntry(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        copyToClipboard(text)
+    }
+
+    @objc private func copyLastTranscription() {
+        guard !appState.lastTranscription.isEmpty else { return }
+        copyToClipboard(appState.lastTranscription)
+    }
+
+    private func copyToClipboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     private func setupComponents() {
         audioRecorder = AudioRecorder()
         audioDeviceManager = AudioDeviceManager()
-        overlayWindow = OverlayWindow(appState: appState)
+        overlayWindow = OverlayWindow(appState: appState) { [weak self] in
+            self?.cancelActiveOperation()
+        }
         textInserter = TextInserter()
         modelManager = ModelManager(appState: appState)
         hotkeyManager = HotkeyManager(appState: appState) { [weak self] event, mode in
@@ -171,6 +275,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] state in
                 self?.updateStatusIcon(for: state)
                 self?.updateMenu(for: state)
+                self?.handleErrorAutoReset(for: state)
             }
             .store(in: &cancellables)
 
@@ -183,6 +288,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
                 self?.updateErrorMenuItem(message)
+            }
+            .store(in: &cancellables)
+
+        appState.$transcriptionHistory
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] history in
+                self?.rebuildRecentMenu(with: history)
             }
             .store(in: &cancellables)
 
@@ -235,7 +347,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 Task { @MainActor in
                     self?.updateEngineMenuItem()
-                    await self?.initializeTranscriptionEngine()
+                    self?.launchEngineInitialization()
                 }
             }
             .store(in: &cancellables)
@@ -245,7 +357,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 Task { @MainActor in
                     self?.updateEngineMenuItem()
-                    await self?.initializeTranscriptionEngine()
+                    self?.launchEngineInitialization()
                 }
             }
             .store(in: &cancellables)
@@ -255,7 +367,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 Task { @MainActor in
                     self?.updateEngineMenuItem()
-                    await self?.initializeTranscriptionEngine()
+                    self?.launchEngineInitialization()
                 }
             }
             .store(in: &cancellables)
@@ -372,6 +484,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The error icon auto-returns to idle after a few seconds so the app
+    /// never feels stuck; the "Last error" menu line keeps the detail.
+    private func handleErrorAutoReset(for state: RecordingState) {
+        errorResetTimer?.invalidate()
+        errorResetTimer = nil
+
+        guard case .error = state else { return }
+
+        errorResetTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, case .error = self.appState.recordingState else { return }
+                self.appState.recordingState = .idle
+            }
+        }
+    }
+
     private func updateErrorMenuItem(_ message: String?) {
         guard let errorMenuItem, let errorSeparatorItem else { return }
         guard let message, !message.isEmpty else {
@@ -393,8 +521,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if isInitializing {
             startIconAnimation(forLoading: true)
-            recordingItem.title = "Loading Model..."
-            recordingItem.isEnabled = false
+            // Recording stays available while the model loads — transcription
+            // waits for initialization to finish.
+            if appState.recordingState.isIdle {
+                recordingItem.title = "Start Recording (model loading…)"
+            }
         } else {
             stopIconAnimation()
             // Restore based on current recording state
@@ -530,12 +661,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 stopAndTranscribe()
             }
         case .toggle:
-            if event == .keyDown {
+            switch event {
+            case .keyDown:
                 if appState.recordingState == .recording {
+                    toggleKeyDownAt = nil
+                    toggleKeyDownStartedRecording = false
                     stopAndTranscribe()
                 } else if appState.recordingState.isIdle {
+                    toggleKeyDownAt = Date()
+                    toggleKeyDownStartedRecording = true
                     startRecording()
                 }
+            case .keyUp:
+                // Held past the tap threshold → the user treated it as
+                // push-to-talk, so release stops and transcribes.
+                if toggleKeyDownStartedRecording,
+                   appState.recordingState == .recording,
+                   let downAt = toggleKeyDownAt,
+                   Date().timeIntervalSince(downAt) >= Self.tapHoldThreshold {
+                    stopAndTranscribe()
+                }
+                toggleKeyDownAt = nil
+                toggleKeyDownStartedRecording = false
             }
         }
     }
@@ -551,11 +698,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startRecording() {
         guard appState.recordingState.isIdle else { return }
 
-        // Check if engine is still initializing
-        if appState.isInitializingEngine {
-            showNotification(title: "Please Wait", body: "Model is still loading...")
-            return
-        }
+        // Recording is allowed while the engine is still loading — audio capture
+        // doesn't need the model, and transcription waits for initialization.
+        // Only block when transcription can never succeed (missing model/key).
 
         // Check if model is available when using WhisperKit
         if appState.transcriptionEngine == .whisperKit {
@@ -569,7 +714,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if appState.transcriptionEngine == .parakeet
             && !appState.parakeetDownloadedModels.contains(appState.parakeetModel.rawValue) {
             if !appState.isDownloadingModel {
-                Task { await initializeTranscriptionEngine() }
+                launchEngineInitialization()
             }
             showNotification(title: "Please Wait", body: "Parakeet model is still loading...")
             return
@@ -579,12 +724,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if appState.transcriptionEngine == .openAI && appState.openAIAPIKey.isEmpty {
             showNotification(title: "API Key Required", body: "Please set your OpenAI API key in Settings.")
             openSettings()
-            return
-        }
-
-        // Ensure we have an engine
-        guard transcriptionEngine != nil else {
-            showNotification(title: "Engine Not Ready", body: "Transcription engine is not initialized. Please wait or check settings.")
             return
         }
 
@@ -604,7 +743,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appState.startRecordingTimer()
             startRecordingLimitTimer()
             overlayWindow.show(position: appState.overlayPosition)
-            startEscapeKeyMonitor()
         } catch {
             audioRecorder.resetAudioEngine()
 
@@ -652,7 +790,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopAndTranscribe() {
         guard appState.recordingState == .recording else { return }
 
-        stopEscapeKeyMonitor()
         stopRecordingLimitTimer()
 
         // Restore system audio if it was muted
@@ -665,30 +802,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.recordingState = .transcribing
         overlayWindow.showTranscribing()
 
-        Task {
-            var audioURL: URL?
-            let engineType = appState.transcriptionEngine
-            let engineLabel = engineType.rawValue
-            let modelLabel: String
-            switch engineType {
-            case .whisperKit:
-                modelLabel = "WhisperKit \(appState.whisperModel.rawValue)"
-            case .parakeet:
-                modelLabel = appState.parakeetModel.displayName
-            case .openAI:
-                modelLabel = "OpenAI whisper-1"
-            }
+        transcriptionTask = Task {
+            let (engineLabel, modelLabel) = currentEngineLabels()
             let language = appState.language
             let started = Date()
 
             do {
-                audioURL = try audioRecorder.stopRecording()
+                let url = try audioRecorder.stopRecording()
                 let meanRMS = audioRecorder.meanRMS
                 let peakRMS = audioRecorder.peakRMS
-
-                guard let url = audioURL else {
-                    throw TranscriptionError.noAudioData
-                }
 
                 if appState.skipSilentRecordings && Self.isBelowSilenceThreshold(meanRMS: meanRMS) {
                     let meanDb = AppDelegate.dbFromRMS(meanRMS)
@@ -715,93 +837,237 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                guard let engine = transcriptionEngine else {
-                    throw TranscriptionError.engineNotInitialized
-                }
-
-                let text = try await engine.transcribe(audioURL: url)
-                let latency = Date().timeIntervalSince(started)
-
-                let cleaned = AppDelegate.stripNonSpeechAnnotations(text)
-                let finalText = cleaned.isEmpty ? "" : appState.applyTextReplacements(cleaned)
-
-                finalizeAudioFile(
-                    url: url,
-                    engine: engineLabel,
-                    model: modelLabel,
-                    recordingDuration: recordingDuration,
-                    transcribedText: finalText,
-                    latency: latency,
-                    language: language,
-                    errorMessage: nil,
-                    usedCloudFallback: false
-                )
-
-                if !finalText.isEmpty {
-                    appState.addTranscriptionHistory(finalText)
-                    let didPaste = textInserter.insertText(finalText)
-
-                    if didPaste {
-                        if appState.playSoundOnCompletion {
-                            NSSound(named: .init("Tink"))?.play()
-                        }
-                    } else {
-                        // Accessibility permission not granted - text is in clipboard
-                        showNotification(
-                            title: "Text Copied",
-                            body: "Accessibility permission needed for auto-paste. Text copied to clipboard - press Cmd+V to paste."
-                        )
-                    }
-                }
-
-                appState.recordingState = .idle
-                overlayWindow.hide()
+                await transcribeAndDeliver(audioURL: url, recordingDuration: recordingDuration)
 
             } catch {
                 let latency = Date().timeIntervalSince(started)
-                AppLogger.transcription.error("Transcription error: \(error.localizedDescription)")
+                AppLogger.transcription.error("Failed to stop recording: \(error.localizedDescription)")
 
-                // Try cloud fallback if enabled and we have the audio file
-                let shouldTryFallback = appState.enableCloudFallback
-                    && engineType == .whisperKit
-                    && !appState.openAIAPIKey.isEmpty
-                    && audioURL != nil
+                finalizeAudioFile(
+                    url: nil,
+                    engine: engineLabel,
+                    model: modelLabel,
+                    recordingDuration: recordingDuration,
+                    transcribedText: "",
+                    latency: latency,
+                    language: language,
+                    errorMessage: error.localizedDescription,
+                    usedCloudFallback: false
+                )
+                appState.recordingState = .error(error.localizedDescription)
+                appState.lastError = error.localizedDescription
+                if appState.showNotificationOnError {
+                    showNotification(title: "Transcription Error", body: error.localizedDescription)
+                }
+                overlayWindow.hide()
+            }
+        }
+    }
 
-                if shouldTryFallback, let url = audioURL {
-                    let fallbackSucceeded = await tryCloudFallback(
-                        audioURL: url,
-                        recordingDuration: recordingDuration,
-                        language: language,
-                        initialError: error.localizedDescription
-                    )
-                    if !fallbackSucceeded {
-                        appState.recordingState = .error(error.localizedDescription)
-                        appState.lastError = error.localizedDescription
-                        if appState.showNotificationOnError {
-                            showNotification(title: "Transcription Error", body: "Local and cloud transcription both failed")
-                        }
-                    }
-                } else {
-                    finalizeAudioFile(
-                        url: audioURL,
-                        engine: engineLabel,
-                        model: modelLabel,
-                        recordingDuration: recordingDuration,
-                        transcribedText: "",
-                        latency: latency,
-                        language: language,
-                        errorMessage: error.localizedDescription,
-                        usedCloudFallback: false
-                    )
+    private func currentEngineLabels() -> (engine: String, model: String) {
+        let engineType = appState.transcriptionEngine
+        let modelLabel: String
+        switch engineType {
+        case .whisperKit:
+            modelLabel = "WhisperKit \(appState.whisperModel.rawValue)"
+        case .parakeet:
+            modelLabel = appState.parakeetModel.displayName
+        case .openAI:
+            modelLabel = "OpenAI whisper-1"
+        }
+        return (engineType.rawValue, modelLabel)
+    }
+
+    /// Transcribes an audio file and delivers the result (history + paste).
+    /// Shared by the normal recording flow and "Retry Last Transcription".
+    /// Expects recordingState == .transcribing and the overlay already showing.
+    private func transcribeAndDeliver(audioURL: URL, recordingDuration: TimeInterval) async {
+        let engineType = appState.transcriptionEngine
+        let (engineLabel, modelLabel) = currentEngineLabels()
+        let language = appState.language
+        let started = Date()
+
+        // Recording may have started while the engine was still loading —
+        // wait for any in-flight initialization before transcribing.
+        await initializationTask?.value
+        while appState.isInitializingEngine && !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        if Task.isCancelled {
+            recordCancelledTranscription(
+                audioURL: audioURL, engine: engineLabel, model: modelLabel,
+                recordingDuration: recordingDuration, latency: Date().timeIntervalSince(started), language: language
+            )
+            return
+        }
+
+        do {
+            guard let engine = transcriptionEngine else {
+                throw TranscriptionError.engineNotInitialized
+            }
+
+            let text = try await engine.transcribe(audioURL: audioURL)
+            let latency = Date().timeIntervalSince(started)
+
+            // Cancelled mid-transcription — discard the result, but keep the
+            // audio in the debug store so "Retry Last Transcription" can
+            // resurrect a mistaken cancel.
+            if Task.isCancelled {
+                recordCancelledTranscription(
+                    audioURL: audioURL, engine: engineLabel, model: modelLabel,
+                    recordingDuration: recordingDuration, latency: latency, language: language
+                )
+                return
+            }
+
+            let cleaned = AppDelegate.stripNonSpeechAnnotations(text)
+            let finalText = cleaned.isEmpty ? "" : appState.applyTextReplacements(cleaned)
+
+            finalizeAudioFile(
+                url: audioURL,
+                engine: engineLabel,
+                model: modelLabel,
+                recordingDuration: recordingDuration,
+                transcribedText: finalText,
+                latency: latency,
+                language: language,
+                errorMessage: nil,
+                usedCloudFallback: false
+            )
+
+            deliverTranscription(finalText)
+
+            appState.recordingState = .idle
+            overlayWindow.hide()
+
+        } catch {
+            let latency = Date().timeIntervalSince(started)
+
+            if Task.isCancelled || error is CancellationError {
+                recordCancelledTranscription(
+                    audioURL: audioURL, engine: engineLabel, model: modelLabel,
+                    recordingDuration: recordingDuration, latency: latency, language: language
+                )
+                return
+            }
+
+            AppLogger.transcription.error("Transcription error: \(error.localizedDescription)")
+
+            // Try cloud fallback if enabled
+            let shouldTryFallback = appState.enableCloudFallback
+                && engineType == .whisperKit
+                && !appState.openAIAPIKey.isEmpty
+
+            if shouldTryFallback {
+                let fallbackSucceeded = await tryCloudFallback(
+                    audioURL: audioURL,
+                    recordingDuration: recordingDuration,
+                    language: language,
+                    initialError: error.localizedDescription
+                )
+                if !fallbackSucceeded {
                     appState.recordingState = .error(error.localizedDescription)
                     appState.lastError = error.localizedDescription
                     if appState.showNotificationOnError {
-                        showNotification(title: "Transcription Error", body: error.localizedDescription)
+                        showNotification(title: "Transcription Error", body: "Local and cloud transcription both failed")
                     }
                 }
-
-                overlayWindow.hide()
+            } else {
+                let session = finalizeAudioFile(
+                    url: audioURL,
+                    engine: engineLabel,
+                    model: modelLabel,
+                    recordingDuration: recordingDuration,
+                    transcribedText: "",
+                    latency: latency,
+                    language: language,
+                    errorMessage: error.localizedDescription,
+                    usedCloudFallback: false
+                )
+                rememberFailedSession(session)
+                appState.recordingState = .error(error.localizedDescription)
+                appState.lastError = error.localizedDescription
+                if appState.showNotificationOnError {
+                    showNotification(title: "Transcription Error", body: error.localizedDescription)
+                }
             }
+
+            overlayWindow.hide()
+        }
+    }
+
+    private func deliverTranscription(_ text: String) {
+        guard !text.isEmpty else { return }
+
+        appState.addTranscriptionHistory(text)
+        let didPaste = textInserter.insertText(text)
+
+        if didPaste {
+            if appState.playSoundOnCompletion {
+                NSSound(named: .init("Tink"))?.play()
+            }
+        } else {
+            // Accessibility permission not granted - text is in clipboard
+            showNotification(
+                title: "Text Copied",
+                body: "Accessibility permission needed for auto-paste. Text copied to clipboard - press Cmd+V to paste."
+            )
+        }
+    }
+
+    private func recordCancelledTranscription(
+        audioURL: URL,
+        engine: String,
+        model: String,
+        recordingDuration: TimeInterval,
+        latency: TimeInterval,
+        language: String
+    ) {
+        let session = finalizeAudioFile(
+            url: audioURL,
+            engine: engine,
+            model: model,
+            recordingDuration: recordingDuration,
+            transcribedText: "",
+            latency: latency,
+            language: language,
+            errorMessage: "Cancelled by user",
+            usedCloudFallback: false
+        )
+        rememberFailedSession(session)
+    }
+
+    // MARK: - Retry last failed transcription
+
+    private func rememberFailedSession(_ session: TranscriptionDebugSession) {
+        // Retry only works while the audio survives in the debug store
+        guard session.audioFileName != nil else { return }
+        lastFailedSession = session
+        retryMenuItem?.isHidden = false
+    }
+
+    private func clearFailedSession() {
+        lastFailedSession = nil
+        retryMenuItem?.isHidden = true
+    }
+
+    @objc private func retryLastTranscription() {
+        guard appState.recordingState.isIdle else { return }
+
+        guard let session = lastFailedSession,
+              let audioURL = appState.debugSessionStore.audioURL(for: session) else {
+            clearFailedSession()
+            showNotification(title: "Retry Unavailable", body: "The audio from the failed transcription is no longer available.")
+            return
+        }
+
+        clearFailedSession()
+        appState.recordingState = .transcribing
+        overlayWindow.showTranscribing()
+
+        transcriptionTask = Task {
+            await transcribeAndDeliver(audioURL: audioURL, recordingDuration: session.recordingDurationSeconds)
         }
     }
 
@@ -835,21 +1101,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 usedCloudFallback: true
             )
 
-            if !finalText.isEmpty {
-                appState.addTranscriptionHistory(finalText)
-                let didPaste = textInserter.insertText(finalText)
-
-                if didPaste {
-                    if appState.playSoundOnCompletion {
-                        NSSound(named: .init("Tink"))?.play()
-                    }
-                } else {
-                    showNotification(
-                        title: "Text Copied",
-                        body: "Accessibility permission needed for auto-paste. Text copied to clipboard - press Cmd+V to paste."
-                    )
-                }
-            }
+            deliverTranscription(finalText)
 
             appState.recordingState = .idle
             return true
@@ -858,7 +1110,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let latency = Date().timeIntervalSince(started)
             AppLogger.transcription.error("Cloud fallback error: \(error.localizedDescription)")
 
-            finalizeAudioFile(
+            let session = finalizeAudioFile(
                 url: audioURL,
                 engine: "OpenAI API (fallback)",
                 model: "OpenAI whisper-1",
@@ -869,11 +1121,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 errorMessage: "Local: \(initialError) — Cloud: \(error.localizedDescription)",
                 usedCloudFallback: true
             )
+            rememberFailedSession(session)
 
             return false
         }
     }
 
+    @discardableResult
     private func finalizeAudioFile(
         url: URL?,
         engine: String,
@@ -884,8 +1138,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         language: String,
         errorMessage: String?,
         usedCloudFallback: Bool
-    ) {
-        _ = appState.debugSessionStore.record(
+    ) -> TranscriptionDebugSession {
+        appState.debugSessionStore.record(
             engine: engine,
             model: model,
             sourceAudioURL: url,
@@ -901,7 +1155,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func cancelRecording() {
         guard appState.recordingState == .recording else { return }
 
-        stopEscapeKeyMonitor()
         stopRecordingLimitTimer()
 
         // Restore system audio if it was muted
@@ -915,21 +1168,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWindow.hide()
     }
 
-    private func startEscapeKeyMonitor() {
+    private func setupEscapeKeyMonitor() {
         escapeKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape key
                 Task { @MainActor in
-                    self?.cancelRecording()
+                    self?.cancelActiveOperation()
                 }
             }
         }
     }
 
-    private func stopEscapeKeyMonitor() {
-        if let monitor = escapeKeyMonitor {
-            NSEvent.removeMonitor(monitor)
-            escapeKeyMonitor = nil
+    private func cancelActiveOperation() {
+        switch appState.recordingState {
+        case .recording:
+            cancelRecording()
+        case .transcribing:
+            cancelTranscription()
+        case .idle, .error:
+            break
         }
+    }
+
+    private func cancelTranscription() {
+        guard appState.recordingState == .transcribing else { return }
+
+        transcriptionTask?.cancel()
+        appState.recordingState = .idle
+        overlayWindow.hide()
     }
 
     private func startRecordingLimitTimer() {
