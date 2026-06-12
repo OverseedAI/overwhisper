@@ -21,7 +21,8 @@ struct OverlayView: View {
             case .recording:
                 RecordingView(
                     audioLevel: appState.audioLevel,
-                    duration: appState.recordingDuration
+                    duration: appState.recordingDuration,
+                    silenceWarning: appState.micSilenceDetected
                 )
             case .transcribing:
                 TranscribingView()
@@ -172,51 +173,61 @@ struct CancelHintView: View {
 struct RecordingView: View {
     let audioLevel: Float
     let duration: TimeInterval
+    var silenceWarning: Bool = false
 
     @State private var isPulsing = false
     @State private var ringScale: CGFloat = 1.0
 
     // Match the waveform colors
     private let accentColor = Color(red: 0.5, green: 0.5, blue: 1.0)
+    private let warningColor = Color(red: 1.0, green: 0.72, blue: 0.3)
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                // Modern pulsing recording indicator with ring
-                ZStack {
-                    // Outer pulsing ring
-                    Circle()
-                        .stroke(accentColor.opacity(0.3), lineWidth: 2)
+                if silenceWarning {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(warningColor)
                         .frame(width: 18, height: 18)
-                        .scaleEffect(ringScale)
-                        .opacity(2.0 - ringScale)
+                } else {
+                    // Modern pulsing recording indicator with ring
+                    ZStack {
+                        // Outer pulsing ring
+                        Circle()
+                            .stroke(accentColor.opacity(0.3), lineWidth: 2)
+                            .frame(width: 18, height: 18)
+                            .scaleEffect(ringScale)
+                            .opacity(2.0 - ringScale)
 
-                    // Inner solid circle
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [accentColor, accentColor.opacity(0.7)],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 6
+                        // Inner solid circle
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [accentColor, accentColor.opacity(0.7)],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: 6
+                                )
                             )
-                        )
-                        .frame(width: 10, height: 10)
-                        .shadow(color: accentColor.opacity(0.6), radius: 4)
-                }
-                .onAppear {
-                    withAnimation(
-                        .easeOut(duration: 1.2)
-                        .repeatForever(autoreverses: false)
-                    ) {
-                        ringScale = 1.8
+                            .frame(width: 10, height: 10)
+                            .shadow(color: accentColor.opacity(0.6), radius: 4)
+                    }
+                    .onAppear {
+                        ringScale = 1.0
+                        withAnimation(
+                            .easeOut(duration: 1.2)
+                            .repeatForever(autoreverses: false)
+                        ) {
+                            ringScale = 1.8
+                        }
                     }
                 }
 
-                Text("RECORDING")
+                Text(silenceWarning ? "NO MIC INPUT" : "RECORDING")
                     .font(.system(.caption, design: .rounded).weight(.semibold))
                     .tracking(1.8)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(silenceWarning ? warningColor : .secondary)
 
                 Spacer()
 
@@ -224,10 +235,13 @@ struct RecordingView: View {
                     .font(.system(.body, design: .monospaced))
                     .foregroundColor(.primary.opacity(0.85))
             }
+            .animation(.easeInOut(duration: 0.25), value: silenceWarning)
 
             // Audio level waveform
             AudioWaveformView(level: audioLevel)
                 .frame(height: 34)
+                .opacity(silenceWarning ? 0.45 : 1)
+                .animation(.easeInOut(duration: 0.25), value: silenceWarning)
         }
     }
 
@@ -411,6 +425,14 @@ struct VisualEffectView: NSViewRepresentable {
             state.recordingState = .recording
             state.audioLevel = 0.5
             state.recordingDuration = 5.3
+            return state
+        }())
+
+        OverlayView(appState: {
+            let state = AppState()
+            state.recordingState = .recording
+            state.micSilenceDetected = true
+            state.recordingDuration = 4.0
             return state
         }())
 

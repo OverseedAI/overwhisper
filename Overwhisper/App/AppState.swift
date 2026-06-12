@@ -257,6 +257,10 @@ class AppState: ObservableObject {
     @Published var audioLevel: Float = 0.0
     @Published var recordingDuration: TimeInterval = 0.0
 
+    /// True when the mic has produced no audible input for long enough that
+    /// the user should be warned (wrong input device, muted hardware, dead mic).
+    @Published var micSilenceDetected: Bool = false
+
     // Settings
     @Published var recordingMode: RecordingMode {
         didSet { UserDefaults.standard.set(recordingMode.rawValue, forKey: "recordingMode") }
@@ -376,6 +380,17 @@ class AppState: ObservableObject {
     private let maxTranscriptionHistory = 50
     private let transcriptionHistoryKey = "transcriptionHistory"
 
+    // Live mic silence detection.
+    // audioLevel is normalized 0...1 over -40...0 dBFS, so 0.05 ≈ -38 dBFS —
+    // the same threshold used to skip silent recordings after the fact.
+    private let silenceLevelThreshold: Float = 0.05
+    // Warn quickly when nothing has been heard at all…
+    private let initialSilenceWarningDelay: TimeInterval = 3.0
+    // …but tolerate thinking pauses once real speech has come through.
+    private let ongoingSilenceWarningDelay: TimeInterval = 10.0
+    private var lastAudibleAt: TimeInterval = 0
+    private var hasHeardAudio = false
+
     init() {
         // Load settings from UserDefaults
         let modeStr = UserDefaults.standard.string(forKey: "recordingMode") ?? RecordingMode.toggle.rawValue
@@ -454,9 +469,14 @@ class AppState: ObservableObject {
 
     func startRecordingTimer() {
         recordingDuration = 0
+        lastAudibleAt = 0
+        hasHeardAudio = false
+        micSilenceDetected = false
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.recordingDuration += 0.1
+                guard let self else { return }
+                self.recordingDuration += 0.1
+                self.updateSilenceDetection()
             }
         }
     }
@@ -464,6 +484,23 @@ class AppState: ObservableObject {
     func stopRecordingTimer() {
         recordingTimer?.invalidate()
         recordingTimer = nil
+        micSilenceDetected = false
+    }
+
+    private func updateSilenceDetection() {
+        guard recordingState == .recording else { return }
+
+        if audioLevel >= silenceLevelThreshold {
+            lastAudibleAt = recordingDuration
+            hasHeardAudio = true
+            if micSilenceDetected { micSilenceDetected = false }
+            return
+        }
+
+        let delay = hasHeardAudio ? ongoingSilenceWarningDelay : initialSilenceWarningDelay
+        if !micSilenceDetected && recordingDuration - lastAudibleAt >= delay {
+            micSilenceDetected = true
+        }
     }
 
     /// Applies text replacements (case-insensitive) from the "from → to" pairs in settings.
