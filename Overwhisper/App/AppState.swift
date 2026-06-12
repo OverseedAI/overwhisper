@@ -15,6 +15,12 @@ struct TranscriptionHistoryEntry: Identifiable, Codable, Equatable {
     }
 }
 
+enum MicInputStatus: Equatable {
+    case ok
+    case low      // audible, but likely too quiet for good transcription
+    case silent   // nothing the STT could use at all
+}
+
 enum RecordingState: Equatable {
     case idle
     case recording
@@ -257,9 +263,11 @@ class AppState: ObservableObject {
     @Published var audioLevel: Float = 0.0
     @Published var recordingDuration: TimeInterval = 0.0
 
-    /// True when the mic has produced no audible input for long enough that
-    /// the user should be warned (wrong input device, muted hardware, dead mic).
-    @Published var micSilenceDetected: Bool = false
+    /// Live read on whether the mic is delivering usable signal: .silent means
+    /// nothing audible for long enough to warn (wrong device, muted hardware,
+    /// dead mic), .low means signal is present but probably too weak for the
+    /// STT models to do well.
+    @Published var micInputStatus: MicInputStatus = .ok
 
     // Settings
     @Published var recordingMode: RecordingMode {
@@ -380,15 +388,25 @@ class AppState: ObservableObject {
     private let maxTranscriptionHistory = 50
     private let transcriptionHistoryKey = "transcriptionHistory"
 
-    // Live mic silence detection.
+    // Live mic input monitoring, evaluated on a 2s rolling mean level so
+    // one-tick transients (keyboard clacks, door slams) can't mask a mic
+    // that isn't actually picking up speech.
     // audioLevel is normalized 0...1 over -40...0 dBFS, so 0.05 ≈ -38 dBFS —
     // the same threshold used to skip silent recordings after the fact.
     private let silenceLevelThreshold: Float = 0.05
+    // -30 dBFS: below this the models still try, but quality suffers.
+    private let lowLevelThreshold: Float = 0.25
+    // -28 dBFS: hysteresis so the low warning doesn't flicker at the boundary.
+    private let lowClearThreshold: Float = 0.30
     // Warn quickly when nothing has been heard at all…
     private let initialSilenceWarningDelay: TimeInterval = 3.0
     // …but tolerate thinking pauses once real speech has come through.
     private let ongoingSilenceWarningDelay: TimeInterval = 10.0
+    private let lowLevelWarningDelay: TimeInterval = 3.0
+    private let levelWindowCapacity = 20  // 2s at the 0.1s tick
+    private var levelWindow: [Float] = []
     private var lastAudibleAt: TimeInterval = 0
+    private var lastHealthyAt: TimeInterval = 0
     private var hasHeardAudio = false
 
     init() {
@@ -469,14 +487,16 @@ class AppState: ObservableObject {
 
     func startRecordingTimer() {
         recordingDuration = 0
+        levelWindow = []
         lastAudibleAt = 0
+        lastHealthyAt = 0
         hasHeardAudio = false
-        micSilenceDetected = false
+        micInputStatus = .ok
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 self.recordingDuration += 0.1
-                self.updateSilenceDetection()
+                self.updateMicInputStatus()
             }
         }
     }
@@ -484,23 +504,45 @@ class AppState: ObservableObject {
     func stopRecordingTimer() {
         recordingTimer?.invalidate()
         recordingTimer = nil
-        micSilenceDetected = false
+        micInputStatus = .ok
     }
 
-    private func updateSilenceDetection() {
+    private func updateMicInputStatus() {
         guard recordingState == .recording else { return }
 
-        if audioLevel >= silenceLevelThreshold {
+        levelWindow.append(audioLevel)
+        if levelWindow.count > levelWindowCapacity { levelWindow.removeFirst() }
+        // audioLevel is linear in dBFS, so this is a rolling mean dB level —
+        // a steady read on whether speech is coming through.
+        let mean = levelWindow.reduce(0, +) / Float(levelWindow.count)
+
+        if mean >= silenceLevelThreshold {
             lastAudibleAt = recordingDuration
             hasHeardAudio = true
-            if micSilenceDetected { micSilenceDetected = false }
-            return
+        }
+        if mean >= lowLevelThreshold {
+            lastHealthyAt = recordingDuration
         }
 
-        let delay = hasHeardAudio ? ongoingSilenceWarningDelay : initialSilenceWarningDelay
-        if !micSilenceDetected && recordingDuration - lastAudibleAt >= delay {
-            micSilenceDetected = true
+        let silenceDelay = hasHeardAudio ? ongoingSilenceWarningDelay : initialSilenceWarningDelay
+
+        let newStatus: MicInputStatus
+        if recordingDuration - lastAudibleAt >= silenceDelay {
+            newStatus = .silent
+        } else if micInputStatus == .low, mean < lowClearThreshold {
+            // Hysteresis: once warned, require a clearly healthy level to clear
+            newStatus = .low
+        } else if mean >= silenceLevelThreshold,
+                  recordingDuration - lastHealthyAt >= lowLevelWarningDelay {
+            // Signal is present but weak. The audibility guard keeps thinking
+            // pauses (true silence) out of this branch — those are handled by
+            // the silent path on its own, longer delay.
+            newStatus = .low
+        } else {
+            newStatus = .ok
         }
+
+        if newStatus != micInputStatus { micInputStatus = newStatus }
     }
 
     /// Applies text replacements (case-insensitive) from the "from → to" pairs in settings.

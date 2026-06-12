@@ -22,7 +22,7 @@ struct OverlayView: View {
                 RecordingView(
                     audioLevel: appState.audioLevel,
                     duration: appState.recordingDuration,
-                    silenceWarning: appState.micSilenceDetected
+                    micStatus: appState.micInputStatus
                 )
             case .transcribing:
                 TranscribingView()
@@ -173,7 +173,7 @@ struct CancelHintView: View {
 struct RecordingView: View {
     let audioLevel: Float
     let duration: TimeInterval
-    var silenceWarning: Bool = false
+    var micStatus: MicInputStatus = .ok
 
     @State private var isPulsing = false
     @State private var ringScale: CGFloat = 1.0
@@ -181,14 +181,36 @@ struct RecordingView: View {
     // Match the waveform colors
     private let accentColor = Color(red: 0.5, green: 0.5, blue: 1.0)
     private let warningColor = Color(red: 1.0, green: 0.72, blue: 0.3)
+    private let cautionColor = Color(red: 0.95, green: 0.85, blue: 0.4)
+
+    private var headerTitle: String {
+        switch micStatus {
+        case .ok: return "RECORDING"
+        case .low: return "LOW MIC LEVEL"
+        case .silent: return "NO MIC INPUT"
+        }
+    }
+
+    private var headerColor: Color {
+        switch micStatus {
+        case .ok: return .secondary
+        case .low: return cautionColor
+        case .silent: return warningColor
+        }
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                if silenceWarning {
+                if micStatus == .silent {
                     Image(systemName: "mic.slash.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(warningColor)
+                        .frame(width: 18, height: 18)
+                } else if micStatus == .low {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(cautionColor)
                         .frame(width: 18, height: 18)
                 } else {
                     // Modern pulsing recording indicator with ring
@@ -224,10 +246,10 @@ struct RecordingView: View {
                     }
                 }
 
-                Text(silenceWarning ? "NO MIC INPUT" : "RECORDING")
+                Text(headerTitle)
                     .font(.system(.caption, design: .rounded).weight(.semibold))
                     .tracking(1.8)
-                    .foregroundColor(silenceWarning ? warningColor : .secondary)
+                    .foregroundColor(headerColor)
 
                 Spacer()
 
@@ -235,13 +257,13 @@ struct RecordingView: View {
                     .font(.system(.body, design: .monospaced))
                     .foregroundColor(.primary.opacity(0.85))
             }
-            .animation(.easeInOut(duration: 0.25), value: silenceWarning)
+            .animation(.easeInOut(duration: 0.25), value: micStatus)
 
             // Audio level waveform
             AudioWaveformView(level: audioLevel)
                 .frame(height: 34)
-                .opacity(silenceWarning ? 0.45 : 1)
-                .animation(.easeInOut(duration: 0.25), value: silenceWarning)
+                .opacity(micStatus == .silent ? 0.45 : 1)
+                .animation(.easeInOut(duration: 0.25), value: micStatus)
         }
     }
 
@@ -431,7 +453,7 @@ struct VisualEffectView: NSViewRepresentable {
         OverlayView(appState: {
             let state = AppState()
             state.recordingState = .recording
-            state.micSilenceDetected = true
+            state.micInputStatus = .silent
             state.recordingDuration = 4.0
             return state
         }())
