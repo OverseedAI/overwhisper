@@ -1,4 +1,5 @@
 .build/
+.swiftpm-cache/
 .models/
 .swiftpm/
 *.xcodeproj/xcuserdata/

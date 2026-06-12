@@ -4,11 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
+This repo is SwiftPM-first. The canonical build path is plain `swift build`; the `.xcodeproj` is generated convenience output from `project.yml` via XcodeGen.
+
 ```bash
 swift build                    # Debug build
 swift build -c release         # Release build
 swift run Overwhisper          # Run debug build
 ```
+
+When running inside Codex or another Seatbelt sandbox, SwiftPM can fail because it tries to spawn its own nested sandbox and write caches under `~/Library/Caches/org.swift.swiftpm`. Use:
+
+```bash
+swift build --disable-sandbox --cache-path .swiftpm-cache
+```
+
+Prefer that over `xcodebuild -project ...` unless the task is specifically about the generated Xcode project. FSEvents/CoreSimulator warnings from Xcode are usually noise; the actionable SwiftPM failures are the nested sandbox/cache permission errors.
 
 Or use the Justfile:
 ```bash

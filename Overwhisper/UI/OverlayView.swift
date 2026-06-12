@@ -36,59 +36,10 @@ struct OverlayView: View {
                 CancelHintView(onCancel: onCancel)
             }
         }
-        .padding(.horizontal, 84)
-        .padding(.vertical, 56)
+        .padding(.horizontal, 38)
+        .padding(.vertical, 25)
         .frame(width: OverlayMetrics.width, height: OverlayMetrics.height)
-        .background(
-            ZStack {
-                // Frosted glass pooled in an ellipse — no straight edges.
-                // maskImage feathers the behind-window blur; the elliptical
-                // SwiftUI mask below feathers the in-process layers the same.
-                VisualEffectView(
-                    material: .hudWindow,
-                    blendingMode: .behindWindow,
-                    maskImage: OverlayMetrics.featheredMask
-                )
-
-                // Dark heart of the pool — anchors contrast so the halo
-                // reads as glowing light, not pale fog over bright desktops
-                EllipticalGradient(
-                    stops: [
-                        .init(color: .black.opacity(0.68), location: 0),
-                        .init(color: .black.opacity(0.58), location: 0.65),
-                        .init(color: .clear, location: 1)
-                    ],
-                    center: .center
-                )
-
-                // Aurora glows that brighten with the voice
-                Circle()
-                    .fill(Color(red: 0.6, green: 0.4, blue: 1.0))
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 46)
-                    .opacity(0.22 + haloLevel * 0.30)
-                    .offset(x: -70, y: -18)
-
-                Circle()
-                    .fill(Color(red: 0.4, green: 0.8, blue: 0.9))
-                    .frame(width: 170, height: 170)
-                    .blur(radius: 48)
-                    .opacity(0.17 + haloLevel * 0.24)
-                    .offset(x: 78, y: 22)
-            }
-            .mask(
-                EllipticalGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: 0.70),
-                        .init(color: .clear, location: 1)
-                    ],
-                    center: .center
-                )
-            )
-            // The whole pool of light swells with speech
-            .scaleEffect(0.94 + haloLevel * 0.10)
-        )
+        .background(OverlaySurface(haloLevel: haloLevel))
         .onChange(of: appState.audioLevel) { _, newLevel in
             let boosted = CGFloat(sqrt(Double(min(1, max(0, newLevel)))))
             let target = max(boosted, haloLevel * 0.92)
@@ -107,44 +58,89 @@ struct OverlayView: View {
 }
 
 enum OverlayMetrics {
-    static let width: CGFloat = 384
-    static let height: CGFloat = 200
+    static let width: CGFloat = 324
+    static let height: CGFloat = 140
+    static let surfaceInset = EdgeInsets(top: 9, leading: 9, bottom: 9, trailing: 9)
+    static let surfaceCornerRadius: CGFloat = 22
+}
 
-    /// Alpha mask for the blur backdrop: an elliptical pool of light —
-    /// opaque in the middle, feathering radially to nothing, so the glass
-    /// has no edges at all.
-    static let featheredMask: NSImage = makeEllipticalMask(
-        size: NSSize(width: width, height: height)
-    )
+struct OverlaySurface: View {
+    let haloLevel: CGFloat
 
-    private static func makeEllipticalMask(size: NSSize) -> NSImage {
-        NSImage(size: size, flipped: false) { rect in
-            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+    private var cornerRadius: CGFloat { OverlayMetrics.surfaceCornerRadius }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
 
-            let colors = [
-                NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1).cgColor,
-                NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1).cgColor,
-                NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0).cgColor
-            ] as CFArray
+    var body: some View {
+        ZStack {
+            shape
+                .fill(.black.opacity(0.22))
+                .shadow(color: .black.opacity(0.30), radius: 18, y: 10)
 
-            guard let gradient = CGGradient(
-                colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                colors: colors,
-                locations: [0, 0.70, 1]
-            ) else { return false }
+            ZStack {
+                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
 
-            // Unit-circle gradient stretched to the view's aspect ratio
-            ctx.translateBy(x: rect.midX, y: rect.midY)
-            ctx.scaleBy(x: rect.width / 2, y: rect.height / 2)
-            ctx.drawRadialGradient(
-                gradient,
-                startCenter: .zero, startRadius: 0,
-                endCenter: .zero, endRadius: 1,
-                options: []
-            )
+                shape
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: Color(red: 0.05, green: 0.06, blue: 0.07).opacity(0.88), location: 0),
+                                .init(color: Color(red: 0.12, green: 0.13, blue: 0.14).opacity(0.84), location: 0.58),
+                                .init(color: Color(red: 0.04, green: 0.05, blue: 0.055).opacity(0.90), location: 1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
 
-            return true
+                Rectangle()
+                    .fill(.white.opacity(0.07))
+                    .frame(height: 1)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .offset(y: 0.5)
+
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.55, green: 0.56, blue: 1.0).opacity(0),
+                                Color(red: 0.55, green: 0.56, blue: 1.0).opacity(0.18 + haloLevel * 0.16),
+                                Color(red: 0.35, green: 0.78, blue: 0.76).opacity(0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 86)
+                    .blur(radius: 18)
+                    .rotationEffect(.degrees(12))
+                    .offset(x: 54 + haloLevel * 12)
+            }
+            .clipShape(shape)
+
+            RoundedRectangle(cornerRadius: cornerRadius - 3, style: .continuous)
+                .stroke(.white.opacity(0.06), lineWidth: 1)
+                .padding(5)
+
+            shape
+                .strokeBorder(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .white.opacity(0.26), location: 0),
+                            .init(color: Color(red: 0.55, green: 0.58, blue: 1.0).opacity(0.16 + haloLevel * 0.16), location: 0.38),
+                            .init(color: .black.opacity(0.14), location: 1)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+
+            shape
+                .strokeBorder(.black.opacity(0.28), lineWidth: 1)
+                .blendMode(.multiply)
         }
+        .padding(OverlayMetrics.surfaceInset)
+        .compositingGroup()
     }
 }
 
@@ -155,7 +151,7 @@ struct CancelHintView: View {
         HStack {
             Text("esc to cancel")
                 .font(.caption2)
-                .foregroundColor(.secondary.opacity(0.8))
+                .foregroundColor(.secondary.opacity(0.72))
 
             Spacer()
 
@@ -179,7 +175,7 @@ struct RecordingView: View {
     @State private var ringScale: CGFloat = 1.0
 
     // Match the waveform colors
-    private let accentColor = Color(red: 0.5, green: 0.5, blue: 1.0)
+    private let accentColor = Color(red: 0.52, green: 0.54, blue: 1.0)
     private let warningColor = Color(red: 1.0, green: 0.72, blue: 0.3)
     private let cautionColor = Color(red: 0.95, green: 0.85, blue: 0.4)
 
@@ -200,8 +196,8 @@ struct RecordingView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 12) {
+        VStack(spacing: 9) {
+            HStack(spacing: 10) {
                 if micStatus == .silent {
                     Image(systemName: "mic.slash.fill")
                         .font(.system(size: 13, weight: .semibold))
@@ -213,35 +209,33 @@ struct RecordingView: View {
                         .foregroundColor(cautionColor)
                         .frame(width: 18, height: 18)
                 } else {
-                    // Modern pulsing recording indicator with ring
                     ZStack {
-                        // Outer pulsing ring
                         Circle()
-                            .stroke(accentColor.opacity(0.3), lineWidth: 2)
-                            .frame(width: 18, height: 18)
+                            .stroke(accentColor.opacity(0.16), lineWidth: 1)
+                            .frame(width: 20, height: 20)
                             .scaleEffect(ringScale)
-                            .opacity(2.0 - ringScale)
+                            .opacity(max(0, 1.7 - ringScale))
 
-                        // Inner solid circle
                         Circle()
                             .fill(
                                 RadialGradient(
-                                    colors: [accentColor, accentColor.opacity(0.7)],
+                                    colors: [.white.opacity(0.92), accentColor],
                                     center: .center,
                                     startRadius: 0,
-                                    endRadius: 6
+                                    endRadius: 5
                                 )
                             )
-                            .frame(width: 10, height: 10)
-                            .shadow(color: accentColor.opacity(0.6), radius: 4)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: accentColor.opacity(0.55), radius: 6)
                     }
+                    .frame(width: 24, height: 24)
                     .onAppear {
                         ringScale = 1.0
                         withAnimation(
-                            .easeOut(duration: 1.2)
+                            .easeOut(duration: 1.4)
                             .repeatForever(autoreverses: false)
                         ) {
-                            ringScale = 1.8
+                            ringScale = 1.65
                         }
                     }
                 }
@@ -254,14 +248,13 @@ struct RecordingView: View {
                 Spacer()
 
                 Text(formatDuration(duration))
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.primary.opacity(0.85))
+                    .font(.system(size: 18, weight: .medium, design: .monospaced))
+                    .foregroundColor(.primary.opacity(0.82))
             }
             .animation(.easeInOut(duration: 0.25), value: micStatus)
 
-            // Audio level waveform
             AudioWaveformView(level: audioLevel)
-                .frame(height: 34)
+                .frame(height: 29)
                 .opacity(micStatus == .silent ? 0.45 : 1)
                 .animation(.easeInOut(duration: 0.25), value: micStatus)
         }
@@ -280,49 +273,66 @@ struct RecordingView: View {
 struct AudioWaveformView: View {
     let level: Float
 
-    private static let barCount = 36
+    private static let barCount = 42
     private let tick = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
     @State private var history: [CGFloat] = Array(repeating: 0, count: barCount)
 
     private let gradientColors = [
-        Color(red: 0.4, green: 0.6, blue: 1.0),  // Soft blue
-        Color(red: 0.6, green: 0.4, blue: 1.0),  // Purple
-        Color(red: 0.4, green: 0.8, blue: 0.9)   // Cyan
+        Color(red: 0.36, green: 0.52, blue: 0.98),
+        Color(red: 0.62, green: 0.52, blue: 1.0),
+        Color(red: 0.38, green: 0.76, blue: 0.74)
     ]
 
     var body: some View {
-        HStack(alignment: .center, spacing: 2.5) {
-            ForEach(history.indices, id: \.self) { index in
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: gradientColors,
-                            startPoint: .bottom,
-                            endPoint: .top
+        ZStack {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(0),
+                            .white.opacity(0.055),
+                            .white.opacity(0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 1)
+                .padding(.horizontal, 18)
+
+            HStack(alignment: .center, spacing: 2.5) {
+                ForEach(history.indices, id: \.self) { index in
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: gradientColors,
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
                         )
-                    )
-                    .frame(width: 3, height: max(3, history[index] * 34))
-                    .opacity(0.55 + history[index] * 0.45)
-                    .shadow(
-                        color: gradientColors[1].opacity(history[index] * 0.6),
-                        radius: history[index] * 3
-                    )
+                        .frame(width: 3, height: max(3, history[index] * 26))
+                        .opacity(0.32 + history[index] * 0.68)
+                        .shadow(
+                            color: gradientColors[1].opacity(history[index] * 0.32),
+                            radius: history[index] * 2
+                        )
+                }
             }
-        }
-        .frame(maxWidth: .infinity)
-        // Fade out the oldest samples on the left
-        .mask(
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black, location: 0.25),
-                    .init(color: .black, location: 1)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
+            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity)
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.12),
+                        .init(color: .black, location: 1)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
             )
-        )
+        }
         .onReceive(tick) { _ in
             // sqrt boost keeps quiet-but-real speech visible (raw RMS for
             // normal speech sits low in the 0...1 range)
