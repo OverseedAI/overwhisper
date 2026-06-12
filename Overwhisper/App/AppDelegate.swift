@@ -509,9 +509,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let trimmed = message.count > 160 ? "\(message.prefix(157))..." : message
-        errorMenuItem.title = "Last error: \(trimmed)"
+        // NSMenuItem never soft-wraps; only an attributedTitle with explicit
+        // newlines renders multi-line, so wrap by hand to keep the menu narrow.
+        let wrapped = Self.wordWrap("Last error: \(trimmed)", width: 48)
+        errorMenuItem.attributedTitle = NSAttributedString(
+            string: wrapped,
+            attributes: [
+                .font: NSFont.menuFont(ofSize: 0),
+                .foregroundColor: NSColor.secondaryLabelColor
+            ]
+        )
         errorMenuItem.isHidden = false
         errorSeparatorItem.isHidden = false
+    }
+
+    private static func wordWrap(_ text: String, width: Int) -> String {
+        var lines: [String] = []
+        var current = ""
+
+        for word in text.split(separator: " ") {
+            if current.isEmpty {
+                current = String(word)
+            } else if current.count + 1 + word.count <= width {
+                current += " \(word)"
+            } else {
+                lines.append(current)
+                current = String(word)
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+
+        return lines.joined(separator: "\n")
     }
 
     private func updateInitializingState(_ isInitializing: Bool) {
