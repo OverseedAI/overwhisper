@@ -15,7 +15,7 @@ class OverlayWindow: NSPanel {
         self.appState = appState
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 220, height: 108),
+            contentRect: NSRect(x: 0, y: 0, width: OverlayMetrics.width, height: OverlayMetrics.height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -25,7 +25,9 @@ class OverlayWindow: NSPanel {
         self.level = .floating
         self.backgroundColor = .clear
         self.isOpaque = false
-        self.hasShadow = true
+        // No window shadow — the backdrop fades to transparent at the edges,
+        // and a shadow would trace a ghost rectangle around it.
+        self.hasShadow = false
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.isMovableByWindowBackground = false
         self.hidesOnDeactivate = false

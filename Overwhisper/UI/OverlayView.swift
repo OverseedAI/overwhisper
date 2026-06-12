@@ -4,6 +4,10 @@ struct OverlayView: View {
     @ObservedObject var appState: AppState
     var onCancel: () -> Void = {}
 
+    // Smoothed voice level driving the halo: fast attack, slow decay,
+    // so the light blooms on speech and settles during pauses.
+    @State private var haloLevel: CGFloat = 0
+
     private var isCancellable: Bool {
         switch appState.recordingState {
         case .recording, .transcribing: return true
@@ -31,17 +35,115 @@ struct OverlayView: View {
                 CancelHintView(onCancel: onCancel)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(width: 220, height: 108)
+        .padding(.horizontal, 84)
+        .padding(.vertical, 56)
+        .frame(width: OverlayMetrics.width, height: OverlayMetrics.height)
         .background(
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+            ZStack {
+                // Frosted glass pooled in an ellipse — no straight edges.
+                // maskImage feathers the behind-window blur; the elliptical
+                // SwiftUI mask below feathers the in-process layers the same.
+                VisualEffectView(
+                    material: .hudWindow,
+                    blendingMode: .behindWindow,
+                    maskImage: OverlayMetrics.featheredMask
+                )
+
+                // Dark heart of the pool — anchors contrast so the halo
+                // reads as glowing light, not pale fog over bright desktops
+                EllipticalGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.68), location: 0),
+                        .init(color: .black.opacity(0.58), location: 0.65),
+                        .init(color: .clear, location: 1)
+                    ],
+                    center: .center
+                )
+
+                // Aurora glows that brighten with the voice
+                Circle()
+                    .fill(Color(red: 0.6, green: 0.4, blue: 1.0))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 46)
+                    .opacity(0.22 + haloLevel * 0.30)
+                    .offset(x: -70, y: -18)
+
+                Circle()
+                    .fill(Color(red: 0.4, green: 0.8, blue: 0.9))
+                    .frame(width: 170, height: 170)
+                    .blur(radius: 48)
+                    .opacity(0.17 + haloLevel * 0.24)
+                    .offset(x: 78, y: 22)
+            }
+            .mask(
+                EllipticalGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.70),
+                        .init(color: .clear, location: 1)
+                    ],
+                    center: .center
+                )
+            )
+            // The whole pool of light swells with speech
+            .scaleEffect(0.94 + haloLevel * 0.10)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-        )
+        .onChange(of: appState.audioLevel) { _, newLevel in
+            let boosted = CGFloat(sqrt(Double(min(1, max(0, newLevel)))))
+            let target = max(boosted, haloLevel * 0.92)
+            withAnimation(.easeOut(duration: 0.12)) {
+                haloLevel = target
+            }
+        }
+        .onChange(of: appState.recordingState) { _, state in
+            if state != .recording {
+                withAnimation(.easeOut(duration: 0.6)) {
+                    haloLevel = 0
+                }
+            }
+        }
+    }
+}
+
+enum OverlayMetrics {
+    static let width: CGFloat = 384
+    static let height: CGFloat = 200
+
+    /// Alpha mask for the blur backdrop: an elliptical pool of light —
+    /// opaque in the middle, feathering radially to nothing, so the glass
+    /// has no edges at all.
+    static let featheredMask: NSImage = makeEllipticalMask(
+        size: NSSize(width: width, height: height)
+    )
+
+    private static func makeEllipticalMask(size: NSSize) -> NSImage {
+        NSImage(size: size, flipped: false) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+
+            let colors = [
+                NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1).cgColor,
+                NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1).cgColor,
+                NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0).cgColor
+            ] as CFArray
+
+            guard let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: colors,
+                locations: [0, 0.70, 1]
+            ) else { return false }
+
+            // Unit-circle gradient stretched to the view's aspect ratio
+            ctx.translateBy(x: rect.midX, y: rect.midY)
+            ctx.scaleBy(x: rect.width / 2, y: rect.height / 2)
+            ctx.drawRadialGradient(
+                gradient,
+                startCenter: .zero, startRadius: 0,
+                endCenter: .zero, endRadius: 1,
+                options: []
+            )
+
+            return true
+        }
     }
 }
 
@@ -111,20 +213,21 @@ struct RecordingView: View {
                     }
                 }
 
-                Text("Recording")
-                    .font(.system(.headline, design: .rounded))
-                    .foregroundColor(.primary)
+                Text("RECORDING")
+                    .font(.system(.caption, design: .rounded).weight(.semibold))
+                    .tracking(1.8)
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
                 Text(formatDuration(duration))
                     .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.primary.opacity(0.85))
             }
 
             // Audio level waveform
             AudioWaveformView(level: audioLevel)
-                .frame(height: 30)
+                .frame(height: 34)
         }
     }
 
@@ -136,14 +239,16 @@ struct RecordingView: View {
     }
 }
 
+/// Scrolling level history: new samples push in from the right and drift
+/// left, so speech leaves a visible trail instead of dots wiggling in place.
 struct AudioWaveformView: View {
     let level: Float
 
-    private let barCount = 24
-    @State private var heights: [CGFloat] = Array(repeating: 0.15, count: 24)
-    @State private var phase: Double = 0
+    private static let barCount = 36
+    private let tick = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
-    // Modern gradient colors
+    @State private var history: [CGFloat] = Array(repeating: 0, count: barCount)
+
     private let gradientColors = [
         Color(red: 0.4, green: 0.6, blue: 1.0),  // Soft blue
         Color(red: 0.6, green: 0.4, blue: 1.0),  // Purple
@@ -151,59 +256,49 @@ struct AudioWaveformView: View {
     ]
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { index in
-                WaveformBar(
-                    height: heights[index],
-                    index: index,
-                    totalBars: barCount,
-                    gradientColors: gradientColors
-                )
+        HStack(alignment: .center, spacing: 2.5) {
+            ForEach(history.indices, id: \.self) { index in
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: gradientColors,
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
+                    .frame(width: 3, height: max(3, history[index] * 34))
+                    .opacity(0.55 + history[index] * 0.45)
+                    .shadow(
+                        color: gradientColors[1].opacity(history[index] * 0.6),
+                        radius: history[index] * 3
+                    )
             }
         }
-        .onChange(of: level) { _, newLevel in
-            updateHeights(with: newLevel)
-        }
-        .onAppear {
-            updateHeights(with: level)
-        }
-    }
-
-    private func updateHeights(with level: Float) {
-        let baseLevel = CGFloat(max(0.05, level))
-
-        withAnimation(.spring(response: 0.15, dampingFraction: 0.7)) {
-            for i in 0..<barCount {
-                // Gentle bell curve that extends toward the sides
-                let centerDistance = abs(CGFloat(i) - CGFloat(barCount - 1) / 2) / CGFloat(barCount / 2)
-                let wave = pow(1.0 - centerDistance, 1.4)
-                // More randomness for organic feel
-                let randomFactor = CGFloat.random(in: 0.7...1.3)
-                let newHeight = max(0.06, min(1.0, baseLevel * wave * randomFactor * 1.5))
-                heights[i] = newHeight
-            }
-        }
-    }
-}
-
-struct WaveformBar: View {
-    let height: CGFloat
-    let index: Int
-    let totalBars: Int
-    let gradientColors: [Color]
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(
-                LinearGradient(
-                    colors: gradientColors,
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
+        .frame(maxWidth: .infinity)
+        // Fade out the oldest samples on the left
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black, location: 0.25),
+                    .init(color: .black, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
             )
-            .frame(width: 5, height: max(4, height * 30))
-            .opacity(0.7 + (height * 0.3))
-            .shadow(color: gradientColors[1].opacity(height * 0.5), radius: height * 4, y: 0)
+        )
+        .onReceive(tick) { _ in
+            // sqrt boost keeps quiet-but-real speech visible (raw RMS for
+            // normal speech sits low in the 0...1 range)
+            let clamped = CGFloat(min(1, max(0, level)))
+            let boosted = sqrt(clamped)
+            let jitter = boosted > 0.05 ? CGFloat.random(in: -0.06...0.06) : 0
+
+            withAnimation(.easeOut(duration: 0.08)) {
+                history.removeFirst()
+                history.append(min(1, max(0, boosted + jitter)))
+            }
+        }
     }
 }
 
@@ -291,18 +386,21 @@ struct ErrorView: View {
 struct VisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
+    var maskImage: NSImage? = nil
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = material
         view.blendingMode = blendingMode
         view.state = .active
+        view.maskImage = maskImage
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
+        nsView.maskImage = maskImage
     }
 }
 
