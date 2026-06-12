@@ -121,6 +121,13 @@ struct GeneralSettingsView: View {
                 .padding(.vertical, 4)
 
                 HStack {
+                    Text("Support Development")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Link("buymeacoffee.com/halshin", destination: URL(string: "https://buymeacoffee.com/halshin")!)
+                }
+
+                HStack {
                     Text("Company Website")
                         .foregroundColor(.secondary)
                     Spacer()

@@ -120,6 +120,10 @@ Overwhisper/
 - The OpenAI API key (if you use one) is stored in the macOS Keychain.
 - Nothing is collected or transmitted except audio sent to OpenAI when that engine is selected.
 
+## Support
+
+Overwhisper is free and open source. If it saves you time, you can support development at [buymeacoffee.com/halshin](https://buymeacoffee.com/halshin).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

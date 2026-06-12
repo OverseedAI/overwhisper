@@ -394,10 +394,10 @@ class AppState: ObservableObject {
     // audioLevel is normalized 0...1 over -40...0 dBFS, so 0.05 ≈ -38 dBFS —
     // the same threshold used to skip silent recordings after the fact.
     private let silenceLevelThreshold: Float = 0.05
-    // -30 dBFS: below this the models still try, but quality suffers.
-    private let lowLevelThreshold: Float = 0.25
-    // -28 dBFS: hysteresis so the low warning doesn't flicker at the boundary.
-    private let lowClearThreshold: Float = 0.30
+    // -32 dBFS: below this the models still try, but quality may suffer.
+    private let lowLevelThreshold: Float = 0.20
+    // -30 dBFS: hysteresis so the low warning doesn't flicker at the boundary.
+    private let lowClearThreshold: Float = 0.25
     // Warn quickly when nothing has been heard at all…
     private let initialSilenceWarningDelay: TimeInterval = 3.0
     // …but tolerate thinking pauses once real speech has come through.

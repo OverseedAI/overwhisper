@@ -93,7 +93,7 @@ struct OverlaySurface: View {
                     )
 
                 Rectangle()
-                    .fill(.white.opacity(0.07))
+                    .fill(.white.opacity(0.07 + haloLevel * 0.04))
                     .frame(height: 1)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .offset(y: 0.5)
@@ -117,27 +117,28 @@ struct OverlaySurface: View {
             }
             .clipShape(shape)
 
-            RoundedRectangle(cornerRadius: cornerRadius - 3, style: .continuous)
-                .stroke(.white.opacity(0.06), lineWidth: 1)
-                .padding(5)
-
             shape
                 .strokeBorder(
                     LinearGradient(
                         stops: [
-                            .init(color: .white.opacity(0.26), location: 0),
-                            .init(color: Color(red: 0.55, green: 0.58, blue: 1.0).opacity(0.16 + haloLevel * 0.16), location: 0.38),
-                            .init(color: .black.opacity(0.14), location: 1)
+                            .init(color: .white.opacity(0.30 + haloLevel * 0.16), location: 0),
+                            .init(color: Color(red: 0.62, green: 0.66, blue: 1.0).opacity(0.18 + haloLevel * 0.28), location: 0.38),
+                            .init(color: .white.opacity(0.08 + haloLevel * 0.08), location: 0.70),
+                            .init(color: .black.opacity(0.12), location: 1)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 1
+                    lineWidth: 1.05
                 )
-
-            shape
-                .strokeBorder(.black.opacity(0.28), lineWidth: 1)
-                .blendMode(.multiply)
+                .shadow(
+                    color: Color(red: 0.58, green: 0.64, blue: 1.0).opacity(0.14 + haloLevel * 0.36),
+                    radius: 2 + haloLevel * 7
+                )
+                .shadow(
+                    color: .white.opacity(0.04 + haloLevel * 0.12),
+                    radius: 8 + haloLevel * 10
+                )
         }
         .padding(OverlayMetrics.surfaceInset)
         .compositingGroup()
@@ -274,7 +275,7 @@ struct AudioWaveformView: View {
     let level: Float
 
     private static let barCount = 42
-    private let tick = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
+    private static let tick = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
     @State private var history: [CGFloat] = Array(repeating: 0, count: barCount)
 
@@ -333,7 +334,7 @@ struct AudioWaveformView: View {
                 )
             )
         }
-        .onReceive(tick) { _ in
+        .onReceive(Self.tick) { _ in
             // sqrt boost keeps quiet-but-real speech visible (raw RMS for
             // normal speech sits low in the 0...1 range)
             let clamped = CGFloat(min(1, max(0, level)))
