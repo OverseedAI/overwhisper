@@ -13,9 +13,10 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
     ARCHS: arm64
-    ONLY_ACTIVE_ARCH: YES
     SWIFT_VERSION: "5.9"
   configs:
+    Debug:
+      ONLY_ACTIVE_ARCH: YES
     Release:
       ENABLE_HARDENED_RUNTIME: YES
 
