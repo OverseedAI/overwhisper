@@ -135,8 +135,7 @@
       position: relative;
       display: grid;
       align-items: center;
-      padding: 76px 0 54px;
-      border-bottom: 2px solid var(--line);
+      padding: 76px 0 104px;
     }
 
     .hero::before {
@@ -367,11 +366,6 @@
     }
 
     .ribbon {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: -1px;
-      z-index: 5;
       border-top: 2px solid var(--line);
       border-bottom: 2px solid var(--line);
       background: var(--ink);
@@ -405,6 +399,10 @@
 
     section {
       padding: 78px 0;
+    }
+
+    #manifesto {
+      padding-top: 46px;
     }
 
     .section-kicker {
@@ -654,6 +652,99 @@
       font-weight: 620;
     }
 
+    .pricing {
+      padding-top: 54px;
+    }
+
+    .pricing-card {
+      display: grid;
+      grid-template-columns: 0.95fr 1.05fr;
+      gap: 28px;
+      align-items: stretch;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: var(--yellow);
+      box-shadow: 10px 10px 0 var(--line);
+      overflow: hidden;
+    }
+
+    .price-main {
+      padding: 32px;
+      border-right: 2px solid var(--line);
+    }
+
+    .price-main h2 {
+      margin-bottom: 14px;
+      font-size: 78px;
+      line-height: 0.9;
+    }
+
+    .price-tag {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 8px;
+      margin: 8px 0 22px;
+      color: var(--green);
+      font-weight: 950;
+    }
+
+    .price-tag strong {
+      font-size: 112px;
+      line-height: 0.82;
+      letter-spacing: 0;
+    }
+
+    .price-tag span {
+      font-size: 24px;
+    }
+
+    .price-main p {
+      max-width: 520px;
+      margin-bottom: 0;
+      color: var(--ink);
+      font-size: 20px;
+      font-weight: 760;
+    }
+
+    .price-receipt {
+      display: grid;
+      align-content: center;
+      gap: 0;
+      padding: 28px;
+      background: var(--white);
+    }
+
+    .receipt-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 2px dashed rgba(21, 21, 20, 0.32);
+      font-size: 18px;
+      font-weight: 850;
+    }
+
+    .receipt-row:last-child {
+      border-bottom: 0;
+    }
+
+    .receipt-row.total {
+      margin-top: 8px;
+      padding-top: 20px;
+      border-top: 2px solid var(--line);
+      border-bottom: 0;
+      color: var(--green);
+      font-size: 24px;
+      font-weight: 950;
+    }
+
+    .receipt-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 720;
+    }
+
     .cta {
       padding: 52px 0 86px;
       text-align: center;
@@ -721,6 +812,7 @@
 
       .hero {
         min-height: auto;
+        padding-bottom: 64px;
       }
 
       .hero-stage {
@@ -750,6 +842,15 @@
       .manifesto,
       .privacy-note {
         grid-template-columns: 1fr;
+      }
+
+      .pricing-card {
+        grid-template-columns: 1fr;
+      }
+
+      .price-main {
+        border-right: 0;
+        border-bottom: 2px solid var(--line);
       }
 
       .feature-grid {
@@ -910,6 +1011,35 @@
         box-shadow: 3px 3px 0 var(--line);
       }
 
+      .pricing-card {
+        box-shadow: 3px 3px 0 var(--line);
+      }
+
+      .price-main,
+      .price-receipt {
+        padding: 20px;
+      }
+
+      .price-main h2 {
+        font-size: 44px;
+      }
+
+      .price-tag strong {
+        font-size: 82px;
+      }
+
+      .price-tag span {
+        font-size: 18px;
+      }
+
+      .receipt-row {
+        font-size: 16px;
+      }
+
+      .receipt-row.total {
+        font-size: 20px;
+      }
+
       .footer-inner {
         align-items: flex-start;
         flex-direction: column;
@@ -928,6 +1058,7 @@
         <a href="#manifesto">Why</a>
         <a href="#engines">Engines</a>
         <a href="#workbench">Workbench</a>
+        <a href="#pricing">Pricing</a>
         <a href="https://github.com/OverseedAI/overwhisper">GitHub</a>
         <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download</a>
       </div>
@@ -1158,6 +1289,51 @@
             Recent debug sessions are stored locally so retry and troubleshooting
             work. They are capped and clearable from Settings. API keys live in Keychain.
           </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="pricing" class="pricing">
+      <div class="shell">
+        <div class="section-kicker">Pricing</div>
+        <div class="pricing-card">
+          <div class="price-main">
+            <h2>One plan. Extremely confusing.</h2>
+            <div class="price-tag">
+              <strong>$0</strong>
+              <span>/ forever-ish</span>
+            </div>
+            <p>
+              You bring the Mac. Your Mac does the transcription. Overwhisper
+              does not invoice you for noticing that.
+            </p>
+          </div>
+          <div class="price-receipt" aria-label="Overwhisper pricing receipt">
+            <div class="receipt-row">
+              <span>Local WhisperKit transcription</span>
+              <strong>$0</strong>
+            </div>
+            <div class="receipt-row">
+              <span>Local Parakeet transcription</span>
+              <strong>$0</strong>
+            </div>
+            <div class="receipt-row">
+              <span>Hotkeys, paste, history, retry</span>
+              <strong>$0</strong>
+            </div>
+            <div class="receipt-row">
+              <span>Monthly fee for using your own Neural Engine</span>
+              <strong>$0</strong>
+            </div>
+            <div class="receipt-row total">
+              <span>Total</span>
+              <strong>$0</strong>
+            </div>
+            <p class="receipt-note">
+              Optional OpenAI transcription still uses your own OpenAI API key.
+              That is between you and OpenAI. The app remains free.
+            </p>
+          </div>
         </div>
       </div>
     </section>
