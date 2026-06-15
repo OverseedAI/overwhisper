@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Overwhisper - Local Mac Dictation</title>
-  <meta name="description" content="Overwhisper is free, open source Mac dictation with local WhisperKit and Parakeet transcription, optional OpenAI, global hotkeys, and cursor-aware paste.">
+  <title>Overwhisper - Free Dictation for Mac</title>
+  <meta name="description" content="Overwhisper is a free Mac dictation app. Press a shortcut, speak, and your words appear where you were typing. Private by default, with optional cloud transcription.">
   <style>
     :root {
       --paper: #f8f1df;
@@ -1056,8 +1056,8 @@
       </a>
       <div class="nav-links">
         <a href="#manifesto">Why</a>
-        <a href="#engines">Engines</a>
-        <a href="#workbench">Workbench</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#features">Features</a>
         <a href="#pricing">Pricing</a>
         <a href="https://github.com/OverseedAI/overwhisper">GitHub</a>
         <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download</a>
@@ -1069,21 +1069,21 @@
     <section class="hero">
       <div class="shell hero-stage">
         <div class="hero-copy">
-          <span class="stamp">Mac dictation without the toll booth</span>
+          <span class="stamp">Free Mac dictation. No toll booth.</span>
           <h1>Speak once. It lands where you were typing.</h1>
           <p>
-            Overwhisper is a free, open source menu bar app for people who want
-            local dictation without renting their own Mac back from a subscription.
+            Press a shortcut, say what you want to write, and Overwhisper puts
+            the words into the app you were already using.
           </p>
           <div class="hero-actions">
             <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download for macOS</a>
-            <a href="https://github.com/OverseedAI/overwhisper" class="button">Read the source</a>
+            <a href="#pricing" class="button">See the price</a>
           </div>
         </div>
 
         <aside class="side-note">
-          Runs WhisperKit or Parakeet locally.
-          <span>OpenAI is there when you choose it, not because the app needs a server to exist.</span>
+          Private by default.
+          <span>Your Mac can do the listening. Cloud transcription is optional, not the cover charge.</span>
         </aside>
 
         <div class="product-poster" aria-label="Overwhisper product workflow">
@@ -1110,16 +1110,16 @@
             </div>
             <div class="engine-tape">
               <div>
-                <strong>WhisperKit</strong>
-                <span>Apple Silicon local models</span>
+                <strong>Private</strong>
+                <span>Works on your Mac by default</span>
               </div>
               <div>
-                <strong>Parakeet</strong>
-                <span>v2 English, v3 multilingual</span>
+                <strong>Fast</strong>
+                <span>Press a shortcut and talk</span>
               </div>
               <div>
-                <strong>OpenAI</strong>
-                <span>Optional cloud path</span>
+                <strong>Flexible</strong>
+                <span>Optional cloud mode</span>
               </div>
             </div>
           </div>
@@ -1130,16 +1130,16 @@
         <div class="ribbon-track">
           <span>Option Space to toggle</span>
           <span>Option Shift Space to push-to-talk</span>
-          <span>Custom vocabulary</span>
-          <span>Text replacements</span>
-          <span>Recent history</span>
-          <span>Retry failed audio</span>
+          <span>Add names it should know</span>
+          <span>Auto-fix common mistakes</span>
+          <span>Copy recent dictation</span>
+          <span>Retry when audio fails</span>
           <span>Option Space to toggle</span>
           <span>Option Shift Space to push-to-talk</span>
-          <span>Custom vocabulary</span>
-          <span>Text replacements</span>
-          <span>Recent history</span>
-          <span>Retry failed audio</span>
+          <span>Add names it should know</span>
+          <span>Auto-fix common mistakes</span>
+          <span>Copy recent dictation</span>
+          <span>Retry when audio fails</span>
         </div>
       </div>
     </section>
@@ -1147,102 +1147,102 @@
     <section id="manifesto">
       <div class="shell manifesto">
         <div class="big-quote">
-          If your laptop is doing the inference, the core workflow should not be trapped behind a monthly toll.
+          If your Mac is doing the work, you should not need a monthly plan just to speak into it.
         </div>
         <ul class="plain-list">
           <li>
             <span class="number">1</span>
             <div>
-              <strong>Use the hardware you already bought.</strong>
-              <p>Local WhisperKit and Parakeet models run on Apple Silicon by default.</p>
+              <strong>Use the Mac you already bought.</strong>
+              <p>Overwhisper can turn speech into text right on your computer.</p>
             </div>
           </li>
           <li>
             <span class="number">2</span>
             <div>
-              <strong>Stay in the app you were using.</strong>
-              <p>The transcript is pasted at the cursor instead of becoming another inbox to manage.</p>
+              <strong>Stay where you are.</strong>
+              <p>Your words appear in Messages, Notes, email, your browser, or any text box.</p>
             </div>
           </li>
           <li>
             <span class="number">3</span>
             <div>
-              <strong>Keep cloud as a choice.</strong>
-              <p>OpenAI transcription exists for hard audio and fallback, not as the mandatory path.</p>
+              <strong>Use cloud only when you want it.</strong>
+              <p>Private local dictation is the default. Online transcription is an option for tougher audio.</p>
             </div>
           </li>
         </ul>
       </div>
     </section>
 
-    <section id="engines">
+    <section id="how-it-works">
       <div class="shell">
-        <div class="section-kicker">Engines</div>
-        <h2>Pick the speech engine like you pick a tool, not a plan.</h2>
+        <div class="section-kicker">How it works</div>
+        <h2>Choose private, fast, or cloud-assisted dictation.</h2>
         <p class="intro">
-          Different voices, languages, and machines need different tradeoffs.
-          Overwhisper makes the choice explicit.
+          Most people can leave this alone. Overwhisper is private by default,
+          and the technical choices are there for people who want more control.
         </p>
 
         <div class="switchboard">
           <div class="switch-row">
-            <h3>WhisperKit</h3>
-            <p>Local Whisper models, from small fast English models to multilingual Large v3 Turbo.</p>
-            <span class="badge">On device</span>
+            <h3>Private mode</h3>
+            <p>Speech is turned into text on your Mac. Good for everyday writing and privacy-sensitive work.</p>
+            <span class="badge">Default</span>
           </div>
           <div class="switch-row">
-            <h3>Parakeet</h3>
-            <p>Local FluidAudio transcription with Parakeet v2 English and Parakeet v3 multilingual support.</p>
-            <span class="badge">On device</span>
+            <h3>More languages</h3>
+            <p>Pick language-aware local models when you need multilingual dictation or better non-English support.</p>
+            <span class="badge">On your Mac</span>
           </div>
           <div class="switch-row">
-            <h3>OpenAI</h3>
-            <p>Optional Whisper API transcription, including fallback when local WhisperKit transcription fails.</p>
-            <span class="badge cloud">Opt-in cloud</span>
+            <h3>Cloud help</h3>
+            <p>Use online transcription when you choose it, or as a fallback for difficult recordings.</p>
+            <span class="badge cloud">Optional</span>
           </div>
         </div>
       </div>
     </section>
 
-    <section id="workbench" class="workbench">
+    <section id="features" class="workbench">
       <div class="shell">
-        <div class="section-kicker">Workbench</div>
-        <h2>This is the unglamorous stuff that makes dictation usable.</h2>
+        <div class="section-kicker">Features</div>
+        <h2>The small things that make dictation feel normal.</h2>
         <p class="intro">
-          A dictation app lives or dies on the boring edges: hotkeys, microphones,
-          silence, retries, cleanup, and getting out of your way.
+          Dictation should be quick enough to use all day, not a separate ritual
+          with cleanup afterwards.
         </p>
 
         <div class="feature-grid">
           <article class="feature">
             <small>Hotkeys</small>
-            <h3>Toggle or push-to-talk</h3>
-            <p>Tap Option+Space to toggle, or hold Option+Shift+Space to record only while pressed. Both are configurable.</p>
+            <h3>Press, talk, done</h3>
+            <p>Tap Option+Space to start and stop, or hold a shortcut while you speak. Change the shortcuts anytime.</p>
           </article>
           <article class="feature">
             <small>Microphones</small>
             <h3>Choose the right input</h3>
-            <p>Use the system default microphone or pick a specific device when your desk setup gets complicated.</p>
+            <p>Use your Mac microphone, headphones, USB mic, or audio interface without digging through menus every time.</p>
           </article>
           <article class="feature">
             <small>Cleanup</small>
-            <h3>Vocabulary and replacements</h3>
-            <p>Bias names and acronyms, then fix predictable mistakes like Cloud Code to Claude Code automatically.</p>
+            <h3>Teach it your words</h3>
+            <p>Add names, acronyms, product names, and common corrections so dictation sounds more like you.</p>
           </article>
           <article class="feature">
             <small>Recovery</small>
-            <h3>History, playback, retry</h3>
-            <p>Copy recent transcripts, inspect local debug sessions, play back captured audio, and retry failures.</p>
+            <h3>Find what you just said</h3>
+            <p>Copy recent dictation, replay a recording, or retry if the first pass missed something.</p>
           </article>
           <article class="feature">
             <small>Guardrails</small>
-            <h3>Skip silence and limit runs</h3>
-            <p>Ignore accidental empty recordings and set a duration limit for the times you forget recording is on.</p>
+            <h3>Ignore accidental silence</h3>
+            <p>Skip empty recordings and set a time limit for the moments you forget the microphone is still running.</p>
           </article>
           <article class="feature">
             <small>Feedback</small>
-            <h3>Overlay without theater</h3>
-            <p>A compact waveform shows that recording is live, then gets out of the way when transcription is done.</p>
+            <h3>A tiny recording signal</h3>
+            <p>A compact waveform shows that Overwhisper is listening, then disappears when the text is inserted.</p>
           </article>
         </div>
       </div>
@@ -1251,27 +1251,27 @@
     <section>
       <div class="shell">
         <div class="section-kicker">Flow</div>
-        <h2>Four moves. No transcript janitor work.</h2>
+        <h2>Four moves. No transcript cleanup job.</h2>
         <div class="steps">
           <article class="step">
             <span class="number">1</span>
             <h3>Focus any field</h3>
-            <p>Messages, Notes, your browser, an IDE, a ticket, a doc, wherever text goes.</p>
+            <p>Messages, Notes, email, browser forms, documents, or anywhere else you can type.</p>
           </article>
           <article class="step">
             <span class="number">2</span>
             <h3>Press the hotkey</h3>
-            <p>Toggle recording or use push-to-talk. The menu bar app stays quiet until needed.</p>
+            <p>Start recording with a shortcut. Overwhisper lives quietly in the menu bar until needed.</p>
           </article>
           <article class="step">
             <span class="number">3</span>
             <h3>Say the thing</h3>
-            <p>Local models transcribe on your Mac, with optional language hints and translation.</p>
+            <p>Speak naturally. Choose a language if you want, or let the app figure it out.</p>
           </article>
           <article class="step">
             <span class="number">4</span>
             <h3>Keep moving</h3>
-            <p>The text is pasted at your cursor. If Accessibility is missing, it is copied to clipboard.</p>
+            <p>The text appears at your cursor. If macOS blocks paste access, it is copied to your clipboard.</p>
           </article>
         </div>
       </div>
@@ -1282,12 +1282,12 @@
         <h2>Your voice should not need a server trip.</h2>
         <div>
           <p>
-            With WhisperKit or Parakeet, audio stays on your Mac. OpenAI is used
-            only when selected, or when you enable fallback and local transcription fails.
+            By default, Overwhisper turns speech into text on your Mac. Online
+            transcription is used only when you choose it.
           </p>
           <p>
-            Recent debug sessions are stored locally so retry and troubleshooting
-            work. They are capped and clearable from Settings. API keys live in Keychain.
+            Recent recordings are kept locally so retry and playback work. They
+            are capped and clearable from Settings.
           </p>
         </div>
       </div>
@@ -1304,25 +1304,25 @@
               <span>/ forever-ish</span>
             </div>
             <p>
-              You bring the Mac. Your Mac does the transcription. Overwhisper
-              does not invoice you for noticing that.
+              You bring the Mac. Your Mac does the dictation. Overwhisper does
+              not invoice you for noticing that.
             </p>
           </div>
           <div class="price-receipt" aria-label="Overwhisper pricing receipt">
             <div class="receipt-row">
-              <span>Local WhisperKit transcription</span>
+              <span>Private dictation on your Mac</span>
               <strong>$0</strong>
             </div>
             <div class="receipt-row">
-              <span>Local Parakeet transcription</span>
+              <span>More local speech options</span>
               <strong>$0</strong>
             </div>
             <div class="receipt-row">
-              <span>Hotkeys, paste, history, retry</span>
+              <span>Shortcuts, paste, history, retry</span>
               <strong>$0</strong>
             </div>
             <div class="receipt-row">
-              <span>Monthly fee for using your own Neural Engine</span>
+              <span>Monthly fee for using your own Mac</span>
               <strong>$0</strong>
             </div>
             <div class="receipt-row total">
@@ -1330,8 +1330,8 @@
               <strong>$0</strong>
             </div>
             <p class="receipt-note">
-              Optional OpenAI transcription still uses your own OpenAI API key.
-              That is between you and OpenAI. The app remains free.
+              Optional online transcription can use your own OpenAI API key.
+              That is separate. The app remains free.
             </p>
           </div>
         </div>
@@ -1340,14 +1340,14 @@
 
     <section class="cta">
       <div class="shell">
-        <h2>Use your Mac like it has a microphone and a Neural Engine.</h2>
+        <h2>Use your Mac like it has a microphone. Because it does.</h2>
         <p>
-          Overwhisper is free, open source, and built for people who want real
-          dictation value without another subscription meter running in the background.
+          Overwhisper is free and built for people who want useful dictation
+          without another subscription meter running in the background.
         </p>
         <div class="cta-actions">
           <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download Overwhisper</a>
-          <a href="https://github.com/OverseedAI/overwhisper" class="button">GitHub</a>
+          <a href="#pricing" class="button">Pricing</a>
           <a href="https://buymeacoffee.com/halshin" class="button">Support development</a>
         </div>
       </div>
@@ -1361,7 +1361,7 @@
         <span>Overwhisper</span>
       </a>
       <div class="footer-links">
-        <a href="https://github.com/OverseedAI/overwhisper">Source</a>
+        <a href="https://github.com/OverseedAI/overwhisper">GitHub</a>
         <a href="https://github.com/OverseedAI/overwhisper/releases">Releases</a>
         <a href="https://github.com/OverseedAI/overwhisper/issues">Issues</a>
         <a href="https://overseed.ai">Overseed</a>
