@@ -12,6 +12,9 @@ actor ParakeetEngine: TranscriptionEngine {
         self.appState = appState
     }
 
+    private static let maxRetries = 3
+    private static let retryDelaySeconds: UInt64 = 5
+
     func initialize() async throws {
         guard !isInitializing else {
             AppLogger.transcription.debug("Parakeet initialization already in progress, skipping")
@@ -39,32 +42,41 @@ actor ParakeetEngine: TranscriptionEngine {
             appState.currentlyDownloadingModel = modelType.rawValue
         }
 
-        do {
-            let models = try await AsrModels.downloadAndLoad(version: modelVersion)
-            let manager = AsrManager(config: .default)
-            try await manager.loadModels(models)
-            asrManager = manager
-            isInitialized = true
+        for attempt in 1...Self.maxRetries {
+            do {
+                let models = try await AsrModels.downloadAndLoad(version: modelVersion)
+                let manager = AsrManager(config: .default)
+                try await manager.loadModels(models)
+                asrManager = manager
+                isInitialized = true
 
-            await MainActor.run {
-                appState.isDownloadingModel = false
-                appState.currentlyDownloadingModel = nil
-                appState.parakeetDownloadedModels.insert(modelType.rawValue)
+                await MainActor.run {
+                    appState.isDownloadingModel = false
+                    appState.currentlyDownloadingModel = nil
+                    appState.parakeetDownloadedModels.insert(modelType.rawValue)
+                }
+
+                AppLogger.transcription.info("Parakeet initialized successfully")
+                return
+            } catch {
+                isInitialized = false
+                asrManager = nil
+
+                AppLogger.transcription.error("Failed to initialize Parakeet (attempt \(attempt)/\(Self.maxRetries)): \(error.localizedDescription)")
+
+                if attempt < Self.maxRetries {
+                    AppLogger.transcription.info("Retrying in \(Self.retryDelaySeconds) seconds...")
+                    try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
+                } else {
+                    await MainActor.run {
+                        appState.isDownloadingModel = false
+                        appState.currentlyDownloadingModel = nil
+                        appState.lastError = "Failed to initialize Parakeet: \(error.localizedDescription)"
+                    }
+
+                    throw ParakeetError.initializationFailed(error.localizedDescription)
+                }
             }
-
-            AppLogger.transcription.info("Parakeet initialized successfully")
-        } catch {
-            isInitialized = false
-            asrManager = nil
-
-            await MainActor.run {
-                appState.isDownloadingModel = false
-                appState.currentlyDownloadingModel = nil
-                appState.lastError = "Failed to initialize Parakeet: \(error.localizedDescription)"
-            }
-
-            AppLogger.transcription.error("Failed to initialize Parakeet: \(error.localizedDescription)")
-            throw ParakeetError.initializationFailed(error.localizedDescription)
         }
     }
 

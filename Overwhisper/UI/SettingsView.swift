@@ -199,24 +199,48 @@ struct TranscriptionSettingsView: View {
         ("ar", "Arabic")
     ]
 
-    private let parakeetLanguages = [
+    // Parakeet v3 transcribes 25 European languages (auto-detected). The
+    // language selection is passed as a script hint where applicable; codes
+    // outside FluidAudio's script-filter enum fall back to auto-detection.
+    private let parakeetV3Languages = [
         ("auto", "Auto-detect"),
         ("bg", "Bulgarian"),
         ("hr", "Croatian"),
         ("cs", "Czech"),
+        ("da", "Danish"),
+        ("nl", "Dutch"),
         ("en", "English"),
+        ("et", "Estonian"),
+        ("fi", "Finnish"),
         ("fr", "French"),
         ("de", "German"),
+        ("el", "Greek"),
+        ("hu", "Hungarian"),
         ("it", "Italian"),
+        ("lv", "Latvian"),
+        ("lt", "Lithuanian"),
+        ("mt", "Maltese"),
         ("pl", "Polish"),
         ("pt", "Portuguese"),
         ("ro", "Romanian"),
-        ("ru", "Russian"),
         ("sk", "Slovak"),
         ("sl", "Slovenian"),
         ("es", "Spanish"),
+        ("sv", "Swedish"),
+        ("ru", "Russian"),
         ("uk", "Ukrainian")
     ]
+
+    // Parakeet v2 is English-only.
+    private let parakeetV2Languages = [
+        ("en", "English")
+    ]
+
+    // The language options offered for the active engine/model selection.
+    private var availableLanguages: [(String, String)] {
+        guard isUsingParakeet else { return whisperLanguages }
+        return appState.parakeetModel == .v2English ? parakeetV2Languages : parakeetV3Languages
+    }
 
     private var engineDescription: String {
         switch appState.transcriptionEngine {
@@ -329,16 +353,21 @@ struct TranscriptionSettingsView: View {
             // 3. Language
             Section {
                 Picker("Language", selection: $appState.language) {
-                    ForEach(isUsingParakeet ? parakeetLanguages : whisperLanguages, id: \.0) { code, name in
+                    ForEach(availableLanguages, id: \.0) { code, name in
                         Text(name).tag(code)
                     }
                 }
+                .disabled(isUsingParakeet && appState.parakeetModel == .v2English)
 
                 Toggle("Translate to English", isOn: $appState.translateToEnglish)
             } header: {
                 Text("Language")
             } footer: {
-                if appState.translateToEnglish {
+                if isUsingParakeet && appState.parakeetModel == .v2English {
+                    Text("Parakeet v2 is English-only. Switch to v3 for other languages.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else if appState.translateToEnglish {
                     Text("Audio will be translated to English. Requires a multilingual model.")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -346,6 +375,12 @@ struct TranscriptionSettingsView: View {
                     Text("Select the language you'll be speaking, or Auto-detect to let the model identify it.")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                }
+            }
+            .onChange(of: appState.parakeetModel) { _, newModel in
+                // v2 only speaks English; clamp any stale multilingual selection.
+                if isUsingParakeet, newModel == .v2English {
+                    appState.language = "en"
                 }
             }
 
