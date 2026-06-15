@@ -10,8 +10,9 @@
 
 <p align="center">
   Press a hotkey, speak, and Overwhisper inserts the text wherever your cursor is.
-  It lives in the menu bar, runs local speech-to-text on your Mac by default, and
-  does not ask you to rent access to hardware you already bought.
+  It lives in the menu bar, runs local WhisperKit or Parakeet speech-to-text on
+  your Mac by default, and does not ask you to rent access to hardware you
+  already bought.
 </p>
 
 <p align="center">
@@ -35,7 +36,8 @@ The goal is not "voice notes". The goal is to make speaking into any Mac text
 field feel as direct as typing:
 
 - Hold a hotkey while writing in Slack, Notes, Linear, your browser, or your IDE.
-- Use Apple Silicon-optimized local models for private, low-latency transcription.
+- Choose WhisperKit or Parakeet local models for private, low-latency
+  transcription on Apple Silicon.
 - Keep a polished menu bar workflow with onboarding, model management, waveform
   feedback, recent transcriptions, retry, and sensible failure handling.
 - Choose cloud transcription only when you explicitly want it.
@@ -66,8 +68,8 @@ Release builds are arm64-only.
 ### Local-first transcription
 
 - **WhisperKit** local transcription, optimized for Apple Silicon.
-- **Parakeet** local transcription via FluidAudio, with English and multilingual
-  model options.
+- **Parakeet** local transcription via FluidAudio, including Parakeet v2 English
+  and Parakeet v3 multilingual model options.
 - **OpenAI Whisper API** as an optional cloud engine when you prefer hosted
   transcription.
 - Download, select, and delete local models from the settings UI.
