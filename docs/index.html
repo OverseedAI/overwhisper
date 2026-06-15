@@ -3,25 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Overwhisper - Local Dictation for macOS</title>
-  <meta name="description" content="Free, open source macOS dictation with local WhisperKit and Parakeet transcription, optional OpenAI, global hotkeys, and cursor-aware paste.">
+  <title>Overwhisper - Local Mac Dictation</title>
+  <meta name="description" content="Overwhisper is free, open source Mac dictation with local WhisperKit and Parakeet transcription, optional OpenAI, global hotkeys, and cursor-aware paste.">
   <style>
     :root {
-      --bg: #f6f4ef;
-      --surface: #ffffff;
-      --surface-muted: #ede9df;
-      --ink: #171716;
-      --muted: #66615a;
-      --soft: #8a8378;
-      --line: #ded8cc;
-      --line-strong: #c9c0b2;
-      --accent: #18715b;
-      --accent-strong: #0e5140;
-      --accent-soft: #dcebe4;
-      --warm: #b55a2a;
-      --shadow: 0 24px 70px rgba(38, 33, 25, 0.13);
-      --radius: 8px;
-      --max: 1180px;
+      --paper: #f8f1df;
+      --paper-2: #eee2c5;
+      --ink: #151514;
+      --muted: #605a4e;
+      --green: #075c48;
+      --green-2: #0b8061;
+      --blue: #164f92;
+      --red: #bd3f2c;
+      --yellow: #f1c84b;
+      --line: #2a2926;
+      --soft-line: rgba(21, 21, 20, 0.18);
+      --white: #fffaf0;
+      --shadow: 10px 10px 0 #151514;
+      --max: 1160px;
     }
 
     * {
@@ -34,19 +33,20 @@
 
     body {
       margin: 0;
-      background: var(--bg);
+      overflow-x: hidden;
+      background:
+        linear-gradient(rgba(21, 21, 20, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(21, 21, 20, 0.03) 1px, transparent 1px),
+        var(--paper);
+      background-size: 32px 32px;
       color: var(--ink);
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.55;
+      line-height: 1.5;
       text-rendering: optimizeLegibility;
     }
 
     a {
       color: inherit;
-    }
-
-    .page {
-      overflow: hidden;
     }
 
     .shell {
@@ -57,14 +57,14 @@
     .nav {
       position: sticky;
       top: 0;
-      z-index: 10;
-      border-bottom: 1px solid rgba(222, 216, 204, 0.7);
-      background: rgba(246, 244, 239, 0.9);
-      backdrop-filter: blur(18px);
+      z-index: 30;
+      border-bottom: 2px solid var(--line);
+      background: rgba(248, 241, 223, 0.94);
+      backdrop-filter: blur(14px);
     }
 
     .nav-inner {
-      height: 72px;
+      min-height: 70px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -74,26 +74,26 @@
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      color: var(--ink);
-      font-weight: 720;
+      gap: 11px;
+      font-weight: 900;
       text-decoration: none;
-      letter-spacing: 0;
     }
 
     .brand img {
-      width: 36px;
-      height: 36px;
+      width: 38px;
+      height: 38px;
+      border: 2px solid var(--line);
       border-radius: 8px;
-      box-shadow: 0 8px 18px rgba(24, 113, 91, 0.16);
+      box-shadow: 4px 4px 0 var(--line);
     }
 
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 24px;
+      gap: 22px;
       color: var(--muted);
-      font-size: 0.94rem;
+      font-size: 15px;
+      font-weight: 720;
     }
 
     .nav-links a {
@@ -108,55 +108,72 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 44px;
+      min-height: 46px;
       padding: 0 18px;
-      border: 1px solid var(--line-strong);
-      border-radius: var(--radius);
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: var(--white);
       color: var(--ink);
-      background: var(--surface);
-      font-weight: 680;
+      font-weight: 900;
       text-decoration: none;
-      transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+      box-shadow: 4px 4px 0 var(--line);
+      transition: transform 140ms ease, box-shadow 140ms ease;
     }
 
     .button:hover {
-      transform: translateY(-1px);
-      border-color: var(--accent);
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 var(--line);
     }
 
     .button-primary {
-      color: #fff;
-      border-color: var(--accent-strong);
-      background: var(--accent-strong);
-    }
-
-    .button-primary:hover {
-      background: var(--accent);
+      background: var(--green);
+      color: var(--white);
     }
 
     .hero {
-      padding: 82px 0 56px;
-    }
-
-    .hero-grid {
+      min-height: 760px;
+      position: relative;
       display: grid;
-      grid-template-columns: minmax(0, 1.03fr) minmax(420px, 0.97fr);
-      gap: 56px;
       align-items: center;
+      padding: 76px 0 54px;
+      border-bottom: 2px solid var(--line);
     }
 
-    .eyebrow {
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 84% 28%, rgba(241, 200, 75, 0.42), transparent 25%),
+        linear-gradient(115deg, rgba(255, 250, 240, 0.84), rgba(255, 250, 240, 0.22) 52%, rgba(7, 92, 72, 0.08));
+      pointer-events: none;
+    }
+
+    .hero-stage {
+      position: relative;
+      min-height: 620px;
+    }
+
+    .hero-copy {
+      position: relative;
+      z-index: 3;
+      max-width: 720px;
+      padding-top: 24px;
+    }
+
+    .stamp {
       display: inline-flex;
       align-items: center;
-      min-height: 30px;
-      padding: 0 11px;
-      border: 1px solid var(--line);
+      min-height: 34px;
+      margin-bottom: 20px;
+      padding: 0 12px;
+      border: 2px solid var(--line);
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.72);
-      color: var(--accent-strong);
-      font-size: 0.82rem;
-      font-weight: 740;
-      letter-spacing: 0.01em;
+      background: var(--yellow);
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 920;
+      text-transform: uppercase;
     }
 
     h1,
@@ -167,181 +184,126 @@
     }
 
     h1 {
-      margin-bottom: 20px;
-      max-width: 760px;
-      font-size: clamp(3.1rem, 8vw, 6.3rem);
-      line-height: 0.96;
+      margin-bottom: 22px;
+      font-size: 108px;
+      line-height: 0.93;
       letter-spacing: 0;
+      max-width: 820px;
     }
 
-    .hero-copy {
-      max-width: 640px;
+    .hero-copy p {
+      max-width: 520px;
+      margin-bottom: 0;
       color: var(--muted);
-      font-size: clamp(1.08rem, 2vw, 1.3rem);
+      font-size: 22px;
+      line-height: 1.45;
+      font-weight: 620;
     }
 
     .hero-actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 30px;
+      gap: 14px;
+      margin-top: 34px;
     }
 
-    .hero-note {
-      margin-top: 18px;
-      color: var(--soft);
-      font-size: 0.94rem;
+    .side-note {
+      width: 280px;
+      position: absolute;
+      right: 0;
+      top: 28px;
+      z-index: 4;
+      transform: rotate(2deg);
+      padding: 16px;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: var(--white);
+      box-shadow: 6px 6px 0 var(--line);
+      font-weight: 820;
     }
 
-    .hero-note strong {
-      color: var(--ink);
+    .side-note span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 650;
     }
 
-    .product-shot {
-      position: relative;
-    }
-
-    .menu-window {
-      border: 1px solid var(--line-strong);
-      border-radius: 16px;
-      background: rgba(255, 255, 255, 0.84);
+    .product-poster {
+      position: absolute;
+      right: 8px;
+      bottom: 0;
+      z-index: 2;
+      width: 560px;
+      max-width: 48%;
+      transform: rotate(-1.4deg);
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: var(--white);
       box-shadow: var(--shadow);
       overflow: hidden;
     }
 
-    .menu-titlebar {
+    .poster-top {
+      min-height: 54px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      min-height: 54px;
+      gap: 16px;
       padding: 0 16px;
-      border-bottom: 1px solid var(--line);
-      background: rgba(246, 244, 239, 0.72);
+      border-bottom: 2px solid var(--line);
+      background: var(--paper-2);
+      font-weight: 900;
     }
 
-    .title-left {
+    .poster-brand {
       display: flex;
       align-items: center;
       gap: 10px;
-      min-width: 0;
-      font-weight: 740;
     }
 
-    .title-left img {
-      width: 28px;
-      height: 28px;
+    .poster-brand img {
+      width: 30px;
+      height: 30px;
+      border: 2px solid var(--line);
       border-radius: 7px;
-      flex: 0 0 auto;
     }
 
-    .status-pill {
-      flex: 0 0 auto;
-      padding: 5px 9px;
+    .recording-pill {
+      padding: 6px 10px;
+      border: 2px solid var(--line);
       border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent-strong);
-      font-size: 0.78rem;
-      font-weight: 730;
+      background: #bde9dc;
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 900;
     }
 
-    .mock-body {
-      padding: 18px;
+    .poster-body {
+      padding: 22px;
     }
 
-    .workflow-box {
-      padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: #fbfaf7;
-    }
-
-    .workflow-row {
+    .dictation-line {
+      min-height: 118px;
       display: grid;
-      grid-template-columns: 74px 1fr;
-      gap: 14px;
-      padding: 13px 0;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .workflow-row:last-child {
-      border-bottom: 0;
-      padding-bottom: 0;
-    }
-
-    .workflow-row:first-child {
-      padding-top: 0;
-    }
-
-    .key {
-      align-self: start;
-      padding: 6px 8px;
-      border: 1px solid var(--line-strong);
-      border-bottom-width: 3px;
-      border-radius: 7px;
-      background: var(--surface);
-      color: var(--ink);
-      font-size: 0.78rem;
+      align-items: end;
+      padding: 18px;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      font-size: 23px;
       font-weight: 760;
-      text-align: center;
-      white-space: nowrap;
-    }
-
-    .workflow-row h3 {
-      margin-bottom: 2px;
-      font-size: 1rem;
-      line-height: 1.25;
-    }
-
-    .workflow-row p {
-      margin-bottom: 0;
-      color: var(--muted);
-      font-size: 0.92rem;
-    }
-
-    .wave {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      height: 50px;
-      margin: 18px 0;
-      padding: 0 2px;
-    }
-
-    .bar {
-      width: 5px;
-      height: var(--h);
-      border-radius: 999px;
-      background: var(--accent);
-      opacity: var(--o);
-      animation: pulse 1250ms ease-in-out infinite;
-      animation-delay: var(--d);
-    }
-
-    @keyframes pulse {
-      0%, 100% {
-        transform: scaleY(0.55);
-      }
-      50% {
-        transform: scaleY(1.15);
-      }
-    }
-
-    .transcript {
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: var(--surface);
-      font-size: 0.95rem;
+      line-height: 1.28;
     }
 
     .cursor {
       display: inline-block;
-      width: 2px;
+      width: 3px;
       height: 1em;
-      margin-left: 2px;
+      margin-left: 3px;
       vertical-align: -0.16em;
-      background: var(--accent);
+      background: var(--green);
       animation: blink 1s steps(2, start) infinite;
     }
 
@@ -351,334 +313,383 @@
       }
     }
 
-    .engine-strip {
+    .wave-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 74px;
+      margin: 14px 0;
+    }
+
+    .wave-row span {
+      width: 8px;
+      height: var(--h);
+      border: 2px solid var(--line);
+      border-radius: 999px;
+      background: var(--green-2);
+      animation: wave 1300ms ease-in-out infinite;
+      animation-delay: var(--d);
+    }
+
+    @keyframes wave {
+      0%, 100% {
+        transform: scaleY(0.55);
+      }
+      50% {
+        transform: scaleY(1.1);
+      }
+    }
+
+    .engine-tape {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 12px;
+      gap: 8px;
     }
 
-    .engine {
-      padding: 11px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.72);
+    .engine-tape div {
+      padding: 12px;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
     }
 
-    .engine strong {
+    .engine-tape strong {
       display: block;
-      margin-bottom: 3px;
-      font-size: 0.88rem;
+      margin-bottom: 4px;
+      font-size: 14px;
     }
 
-    .engine span {
-      color: var(--muted);
-      font-size: 0.78rem;
-    }
-
-    .proof {
-      padding: 34px 0 22px;
-    }
-
-    .proof-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .proof-item {
-      min-height: 116px;
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.62);
-    }
-
-    .proof-item strong {
+    .engine-tape span {
       display: block;
-      margin-bottom: 8px;
-      font-size: 1.05rem;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
     }
 
-    .proof-item span {
-      color: var(--muted);
-      font-size: 0.93rem;
+    .ribbon {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      z-index: 5;
+      border-top: 2px solid var(--line);
+      border-bottom: 2px solid var(--line);
+      background: var(--ink);
+      color: var(--white);
+      overflow: hidden;
+    }
+
+    .ribbon-track {
+      width: max-content;
+      display: flex;
+      gap: 36px;
+      padding: 12px 0;
+      font-size: 16px;
+      font-weight: 900;
+      text-transform: uppercase;
+      animation: crawl 34s linear infinite;
+    }
+
+    .ribbon-track span {
+      white-space: nowrap;
+    }
+
+    @keyframes crawl {
+      from {
+        transform: translateX(0);
+      }
+      to {
+        transform: translateX(-50%);
+      }
     }
 
     section {
-      padding: 72px 0;
+      padding: 78px 0;
     }
 
-    .section-heading {
-      max-width: 760px;
-      margin-bottom: 32px;
-    }
-
-    .label {
+    .section-kicker {
       margin-bottom: 12px;
-      color: var(--warm);
-      font-size: 0.78rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
+      color: var(--red);
+      font-size: 14px;
+      font-weight: 950;
       text-transform: uppercase;
     }
 
     h2 {
-      margin-bottom: 14px;
-      font-size: clamp(2rem, 4vw, 3.1rem);
-      line-height: 1.05;
+      max-width: 840px;
+      margin-bottom: 18px;
+      font-size: 56px;
+      line-height: 1.02;
       letter-spacing: 0;
     }
 
-    .section-heading p {
+    .intro {
+      max-width: 740px;
+      margin-bottom: 38px;
       color: var(--muted);
-      font-size: 1.08rem;
+      font-size: 20px;
+      font-weight: 620;
+    }
+
+    .manifesto {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 42px;
+      align-items: start;
+    }
+
+    .big-quote {
+      padding: 28px;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: var(--yellow);
+      box-shadow: 8px 8px 0 var(--line);
+      font-size: 34px;
+      line-height: 1.08;
+      font-weight: 950;
+    }
+
+    .plain-list {
+      display: grid;
+      gap: 18px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .plain-list li {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 16px;
+      align-items: start;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--soft-line);
+    }
+
+    .number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 42px;
+      height: 42px;
+      border: 2px solid var(--line);
+      border-radius: 50%;
+      background: var(--white);
+      font-weight: 950;
+    }
+
+    .plain-list strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 21px;
+    }
+
+    .plain-list p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 16px;
+      font-weight: 620;
+    }
+
+    .switchboard {
+      border-top: 2px solid var(--line);
+    }
+
+    .switch-row {
+      display: grid;
+      grid-template-columns: 0.7fr 1.3fr 170px;
+      gap: 24px;
+      align-items: center;
+      padding: 24px 0;
+      border-bottom: 2px solid var(--line);
+    }
+
+    .switch-row h3 {
+      margin-bottom: 0;
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .switch-row p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 17px;
+      font-weight: 620;
+    }
+
+    .badge {
+      justify-self: end;
+      padding: 8px 11px;
+      border: 2px solid var(--line);
+      border-radius: 999px;
+      background: var(--white);
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 950;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .badge.cloud {
+      color: var(--blue);
+    }
+
+    .workbench {
+      background: var(--ink);
+      color: var(--white);
+      border-top: 2px solid var(--line);
+      border-bottom: 2px solid var(--line);
+    }
+
+    .workbench .section-kicker {
+      color: #f1c84b;
+    }
+
+    .workbench .intro {
+      color: #d5cbb6;
     }
 
     .feature-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
+      gap: 16px;
     }
 
-    .feature-card {
-      min-height: 196px;
-      padding: 22px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--surface);
+    .feature {
+      min-height: 210px;
+      padding: 20px;
+      border: 2px solid #f8f1df;
+      border-radius: 8px;
+      background: rgba(248, 241, 223, 0.06);
     }
 
-    .feature-card .tag {
-      display: inline-flex;
+    .feature small {
+      display: inline-block;
       margin-bottom: 18px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: var(--surface-muted);
-      color: var(--muted);
-      font-size: 0.76rem;
-      font-weight: 730;
-    }
-
-    .feature-card h3 {
-      margin-bottom: 8px;
-      font-size: 1.18rem;
-      line-height: 1.25;
-    }
-
-    .feature-card p {
-      margin-bottom: 0;
-      color: var(--muted);
-      font-size: 0.96rem;
-    }
-
-    .split {
-      display: grid;
-      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
-      gap: 28px;
-      align-items: start;
-    }
-
-    .panel {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--surface);
-      overflow: hidden;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 16px 18px;
-      border-bottom: 1px solid var(--line);
-      background: #fbfaf7;
-      font-weight: 740;
-    }
-
-    .panel-content {
-      padding: 18px;
-    }
-
-    .model-list {
-      display: grid;
-      gap: 10px;
-    }
-
-    .model-row {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 14px;
-      align-items: center;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fbfaf7;
-    }
-
-    .model-row strong {
-      display: block;
-      margin-bottom: 2px;
-    }
-
-    .model-row span {
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-
-    .badge {
       padding: 5px 8px;
+      border: 2px solid #f8f1df;
       border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent-strong);
-      font-size: 0.76rem;
-      font-weight: 760;
-      white-space: nowrap;
+      color: #f1c84b;
+      font-size: 12px;
+      font-weight: 950;
+      text-transform: uppercase;
     }
 
-    .privacy-band {
-      background: #171716;
-      color: #f6f4ef;
+    .feature h3 {
+      margin-bottom: 8px;
+      font-size: 24px;
+      line-height: 1.1;
     }
 
-    .privacy-band .label {
-      color: #d98a56;
-    }
-
-    .privacy-band .section-heading p,
-    .privacy-band .privacy-list p,
-    .privacy-band .privacy-note {
-      color: #c8c1b7;
-    }
-
-    .privacy-layout {
-      display: grid;
-      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-      gap: 44px;
-      align-items: start;
-    }
-
-    .privacy-list {
-      display: grid;
-      gap: 12px;
-    }
-
-    .privacy-item {
-      padding: 18px;
-      border: 1px solid rgba(246, 244, 239, 0.16);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.04);
-    }
-
-    .privacy-item strong {
-      display: block;
-      margin-bottom: 6px;
-    }
-
-    .privacy-item p {
+    .feature p {
       margin-bottom: 0;
-    }
-
-    .privacy-note {
-      margin-top: 16px;
-      font-size: 0.92rem;
-    }
-
-    .workflow-section {
-      padding-bottom: 84px;
+      color: #d5cbb6;
+      font-size: 16px;
+      font-weight: 600;
     }
 
     .steps {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      counter-reset: step;
+      gap: 0;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: var(--white);
+      overflow: hidden;
+      box-shadow: 8px 8px 0 var(--line);
     }
 
     .step {
-      position: relative;
-      min-height: 170px;
+      min-height: 210px;
       padding: 22px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--surface);
-      counter-increment: step;
+      border-right: 2px solid var(--line);
     }
 
-    .step::before {
-      content: counter(step);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 30px;
-      height: 30px;
-      margin-bottom: 18px;
-      border-radius: 50%;
-      background: var(--accent-strong);
-      color: #fff;
-      font-size: 0.9rem;
-      font-weight: 800;
+    .step:last-child {
+      border-right: 0;
+    }
+
+    .step .number {
+      margin-bottom: 22px;
+      background: var(--green);
+      color: var(--white);
     }
 
     .step h3 {
-      margin-bottom: 7px;
-      font-size: 1.08rem;
+      margin-bottom: 8px;
+      font-size: 22px;
+      line-height: 1.12;
     }
 
     .step p {
       margin-bottom: 0;
       color: var(--muted);
-      font-size: 0.95rem;
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .privacy {
+      padding-bottom: 44px;
+    }
+
+    .privacy-note {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      align-items: start;
+      padding: 28px;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: var(--white);
+      box-shadow: 8px 8px 0 var(--line);
+    }
+
+    .privacy-note h2 {
+      margin-bottom: 0;
+    }
+
+    .privacy-note p {
+      color: var(--muted);
+      font-size: 18px;
+      font-weight: 620;
     }
 
     .cta {
-      padding: 76px 0;
+      padding: 52px 0 86px;
       text-align: center;
     }
 
-    .cta-box {
-      padding: 48px 28px;
-      border: 1px solid var(--line-strong);
-      border-radius: 18px;
-      background: var(--surface);
-      box-shadow: 0 20px 60px rgba(38, 33, 25, 0.1);
-    }
-
     .cta h2 {
-      max-width: 820px;
       margin-left: auto;
       margin-right: auto;
     }
 
     .cta p {
-      max-width: 620px;
-      margin-left: auto;
-      margin-right: auto;
+      max-width: 660px;
+      margin: 0 auto 28px;
       color: var(--muted);
-      font-size: 1.08rem;
+      font-size: 20px;
+      font-weight: 650;
     }
 
     .cta-actions {
       display: flex;
       justify-content: center;
       flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 28px;
+      gap: 14px;
     }
 
     footer {
-      padding: 32px 0 42px;
-      border-top: 1px solid var(--line);
-      color: var(--soft);
-      font-size: 0.92rem;
+      padding: 28px 0 40px;
+      border-top: 2px solid var(--line);
+      background: var(--paper-2);
     }
 
     .footer-inner {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      gap: 20px;
+      align-items: center;
+      gap: 22px;
       flex-wrap: wrap;
     }
 
@@ -686,10 +697,12 @@
       display: flex;
       gap: 18px;
       flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 15px;
+      font-weight: 800;
     }
 
     .footer-links a {
-      color: var(--muted);
       text-decoration: none;
     }
 
@@ -698,55 +711,123 @@
     }
 
     @media (max-width: 980px) {
-      .hero-grid,
-      .split,
-      .privacy-layout {
-        grid-template-columns: 1fr;
+      h1 {
+        font-size: 76px;
       }
 
-      .hero-grid {
-        gap: 36px;
+      h2 {
+        font-size: 44px;
       }
 
-      .product-shot {
+      .hero {
+        min-height: auto;
+      }
+
+      .hero-stage {
+        min-height: auto;
+        display: grid;
+        gap: 34px;
+      }
+
+      .side-note,
+      .product-poster {
+        position: relative;
+        right: auto;
+        top: auto;
+        bottom: auto;
+        width: 100%;
         max-width: 620px;
       }
 
-      .proof-grid,
-      .feature-grid,
+      .side-note {
+        order: 2;
+      }
+
+      .product-poster {
+        order: 3;
+      }
+
+      .manifesto,
+      .privacy-note {
+        grid-template-columns: 1fr;
+      }
+
+      .feature-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .switch-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .badge {
+        justify-self: start;
+      }
+
       .steps {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+
+      .step:nth-child(2) {
+        border-right: 0;
+      }
+
+      .step:nth-child(-n + 2) {
+        border-bottom: 2px solid var(--line);
+      }
     }
 
-    @media (max-width: 720px) {
+    @media (max-width: 680px) {
       .shell {
-        width: min(var(--max), calc(100% - 28px));
+        width: calc(100% - 32px);
+        max-width: 358px;
+        margin-left: 16px;
+        margin-right: auto;
       }
 
       .nav-inner {
-        height: auto;
-        min-height: 66px;
+        min-height: 64px;
       }
 
       .nav-links {
         display: none;
       }
 
+      .brand img {
+        width: 34px;
+        height: 34px;
+        box-shadow: 3px 3px 0 var(--line);
+      }
+
       .hero {
-        padding-top: 54px;
+        padding: 46px 0 54px;
       }
 
       h1 {
-        max-width: 360px;
-        font-size: clamp(2.35rem, 10vw, 2.75rem);
-        line-height: 1.02;
+        max-width: 336px;
+        font-size: 36px;
+        line-height: 1;
+        overflow-wrap: break-word;
       }
 
       .hero-copy,
-      .hero-note,
-      .product-shot {
-        max-width: 360px;
+      .hero-copy p {
+        max-width: 336px;
+      }
+
+      h2 {
+        font-size: 36px;
+      }
+
+      .hero-copy p,
+      .intro,
+      .cta p {
+        font-size: 17px;
+      }
+
+      .stamp {
+        font-size: 12px;
       }
 
       .hero-actions,
@@ -756,335 +837,360 @@
 
       .hero-actions .button,
       .cta-actions .button {
-        width: 100%;
+        width: calc(100% - 4px);
+        box-shadow: 2px 2px 0 var(--line);
       }
 
-      .engine-strip,
-      .proof-grid,
+      .side-note {
+        transform: rotate(0deg);
+        width: 336px;
+        max-width: 100%;
+        box-shadow: 3px 3px 0 var(--line);
+      }
+
+      .product-poster {
+        width: 336px;
+        max-width: 100%;
+        transform: rotate(0deg);
+        box-shadow: 3px 3px 0 var(--line);
+      }
+
+      .poster-body {
+        padding: 16px;
+      }
+
+      .dictation-line {
+        min-height: 96px;
+        font-size: 18px;
+      }
+
+      .engine-tape {
+        grid-template-columns: 1fr;
+      }
+
+      .ribbon-track {
+        font-size: 13px;
+      }
+
+      section {
+        padding: 56px 0;
+      }
+
+      .big-quote {
+        font-size: 28px;
+        box-shadow: 3px 3px 0 var(--line);
+      }
+
+      .plain-list li {
+        grid-template-columns: 1fr;
+      }
+
+      .switch-row h3 {
+        font-size: 30px;
+      }
+
       .feature-grid,
       .steps {
         grid-template-columns: 1fr;
       }
 
-      .workflow-row {
-        grid-template-columns: 1fr;
+      .step,
+      .step:nth-child(2),
+      .step:nth-child(-n + 2) {
+        border-right: 0;
+        border-bottom: 2px solid var(--line);
       }
 
-      .key {
-        width: max-content;
+      .step:last-child {
+        border-bottom: 0;
       }
 
-      section {
-        padding: 54px 0;
+      .privacy-note {
+        padding: 20px;
+        box-shadow: 3px 3px 0 var(--line);
+      }
+
+      .footer-inner {
+        align-items: flex-start;
+        flex-direction: column;
       }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <nav class="nav">
-      <div class="shell nav-inner">
-        <a href="#" class="brand">
-          <img src="icon.png" alt="Overwhisper icon">
-          <span>Overwhisper</span>
-        </a>
-        <div class="nav-links">
-          <a href="#features">Features</a>
-          <a href="#engines">Engines</a>
-          <a href="#privacy">Privacy</a>
-          <a href="https://github.com/OverseedAI/overwhisper">GitHub</a>
-          <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download</a>
-        </div>
+  <nav class="nav">
+    <div class="shell nav-inner">
+      <a href="#" class="brand">
+        <img src="icon.png" alt="Overwhisper icon">
+        <span>Overwhisper</span>
+      </a>
+      <div class="nav-links">
+        <a href="#manifesto">Why</a>
+        <a href="#engines">Engines</a>
+        <a href="#workbench">Workbench</a>
+        <a href="https://github.com/OverseedAI/overwhisper">GitHub</a>
+        <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download</a>
       </div>
-    </nav>
+    </div>
+  </nav>
 
-    <main>
-      <section class="hero">
-        <div class="shell hero-grid">
-          <div>
-            <span class="eyebrow">Free, open source dictation for macOS</span>
-            <h1>Use your voice anywhere you can type.</h1>
-            <p class="hero-copy">
-              Overwhisper lives in your menu bar. Press a hotkey, speak, and it
-              inserts the transcription at your cursor using local WhisperKit or
-              Parakeet models by default.
-            </p>
-            <div class="hero-actions">
-              <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download for macOS</a>
-              <a href="https://github.com/OverseedAI/overwhisper" class="button">View source</a>
-            </div>
-            <p class="hero-note">
-              <strong>No subscription for on-device transcription.</strong>
-              Your Mac runs the model. Overwhisper gives you the workflow.
-            </p>
+  <main>
+    <section class="hero">
+      <div class="shell hero-stage">
+        <div class="hero-copy">
+          <span class="stamp">Mac dictation without the toll booth</span>
+          <h1>Speak once. It lands where you were typing.</h1>
+          <p>
+            Overwhisper is a free, open source menu bar app for people who want
+            local dictation without renting their own Mac back from a subscription.
+          </p>
+          <div class="hero-actions">
+            <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download for macOS</a>
+            <a href="https://github.com/OverseedAI/overwhisper" class="button">Read the source</a>
           </div>
+        </div>
 
-          <div class="product-shot" aria-label="Overwhisper workflow preview">
-            <div class="menu-window">
-              <div class="menu-titlebar">
-                <div class="title-left">
-                  <img src="icon.png" alt="">
-                  <span>Overwhisper</span>
-                </div>
-                <span class="status-pill">Recording</span>
+        <aside class="side-note">
+          Runs WhisperKit or Parakeet locally.
+          <span>OpenAI is there when you choose it, not because the app needs a server to exist.</span>
+        </aside>
+
+        <div class="product-poster" aria-label="Overwhisper product workflow">
+          <div class="poster-top">
+            <div class="poster-brand">
+              <img src="icon.png" alt="">
+              <span>Overwhisper</span>
+            </div>
+            <span class="recording-pill">Recording</span>
+          </div>
+          <div class="poster-body">
+            <div class="dictation-line">
+              This paragraph started as speech and landed in the app I was already using<span class="cursor"></span>
+            </div>
+            <div class="wave-row" aria-hidden="true">
+              <span style="--h: 24px; --d: 0ms;"></span>
+              <span style="--h: 42px; --d: 80ms;"></span>
+              <span style="--h: 56px; --d: 160ms;"></span>
+              <span style="--h: 34px; --d: 240ms;"></span>
+              <span style="--h: 66px; --d: 320ms;"></span>
+              <span style="--h: 44px; --d: 400ms;"></span>
+              <span style="--h: 58px; --d: 480ms;"></span>
+              <span style="--h: 28px; --d: 560ms;"></span>
+            </div>
+            <div class="engine-tape">
+              <div>
+                <strong>WhisperKit</strong>
+                <span>Apple Silicon local models</span>
               </div>
-              <div class="mock-body">
-                <div class="workflow-box">
-                  <div class="workflow-row">
-                    <div class="key">Opt Space</div>
-                    <div>
-                      <h3>Tap to toggle, hold to talk</h3>
-                      <p>Use a global hotkey from any app. Push-to-talk is configurable too.</p>
-                    </div>
-                  </div>
-                  <div class="workflow-row">
-                    <div class="key">Local</div>
-                    <div>
-                      <h3>WhisperKit or Parakeet</h3>
-                      <p>Pick the local model family that fits your language, speed, and accuracy needs.</p>
-                    </div>
-                  </div>
-                  <div class="wave" aria-hidden="true">
-                    <span class="bar" style="--h: 18px; --o: 0.38; --d: 0ms;"></span>
-                    <span class="bar" style="--h: 28px; --o: 0.48; --d: 80ms;"></span>
-                    <span class="bar" style="--h: 44px; --o: 0.74; --d: 160ms;"></span>
-                    <span class="bar" style="--h: 50px; --o: 0.92; --d: 240ms;"></span>
-                    <span class="bar" style="--h: 34px; --o: 0.62; --d: 320ms;"></span>
-                    <span class="bar" style="--h: 46px; --o: 0.82; --d: 400ms;"></span>
-                    <span class="bar" style="--h: 24px; --o: 0.44; --d: 480ms;"></span>
-                    <span class="bar" style="--h: 38px; --o: 0.68; --d: 560ms;"></span>
-                    <span class="bar" style="--h: 52px; --o: 0.94; --d: 640ms;"></span>
-                    <span class="bar" style="--h: 30px; --o: 0.52; --d: 720ms;"></span>
-                    <span class="bar" style="--h: 20px; --o: 0.38; --d: 800ms;"></span>
-                  </div>
-                  <div class="transcript">
-                    The transcription appears right where I am writing<span class="cursor"></span>
-                  </div>
-                </div>
-                <div class="engine-strip">
-                  <div class="engine">
-                    <strong>WhisperKit</strong>
-                    <span>Apple Silicon local models</span>
-                  </div>
-                  <div class="engine">
-                    <strong>Parakeet</strong>
-                    <span>v2 English, v3 multilingual</span>
-                  </div>
-                  <div class="engine">
-                    <strong>OpenAI</strong>
-                    <span>Optional cloud engine</span>
-                  </div>
-                </div>
+              <div>
+                <strong>Parakeet</strong>
+                <span>v2 English, v3 multilingual</span>
+              </div>
+              <div>
+                <strong>OpenAI</strong>
+                <span>Optional cloud path</span>
               </div>
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      <div class="proof">
-        <div class="shell proof-grid">
-          <div class="proof-item">
-            <strong>Local-first</strong>
-            <span>WhisperKit and Parakeet run on your Mac by default.</span>
+      <div class="ribbon" aria-hidden="true">
+        <div class="ribbon-track">
+          <span>Option Space to toggle</span>
+          <span>Option Shift Space to push-to-talk</span>
+          <span>Custom vocabulary</span>
+          <span>Text replacements</span>
+          <span>Recent history</span>
+          <span>Retry failed audio</span>
+          <span>Option Space to toggle</span>
+          <span>Option Shift Space to push-to-talk</span>
+          <span>Custom vocabulary</span>
+          <span>Text replacements</span>
+          <span>Recent history</span>
+          <span>Retry failed audio</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="manifesto">
+      <div class="shell manifesto">
+        <div class="big-quote">
+          If your laptop is doing the inference, the core workflow should not be trapped behind a monthly toll.
+        </div>
+        <ul class="plain-list">
+          <li>
+            <span class="number">1</span>
+            <div>
+              <strong>Use the hardware you already bought.</strong>
+              <p>Local WhisperKit and Parakeet models run on Apple Silicon by default.</p>
+            </div>
+          </li>
+          <li>
+            <span class="number">2</span>
+            <div>
+              <strong>Stay in the app you were using.</strong>
+              <p>The transcript is pasted at the cursor instead of becoming another inbox to manage.</p>
+            </div>
+          </li>
+          <li>
+            <span class="number">3</span>
+            <div>
+              <strong>Keep cloud as a choice.</strong>
+              <p>OpenAI transcription exists for hard audio and fallback, not as the mandatory path.</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="engines">
+      <div class="shell">
+        <div class="section-kicker">Engines</div>
+        <h2>Pick the speech engine like you pick a tool, not a plan.</h2>
+        <p class="intro">
+          Different voices, languages, and machines need different tradeoffs.
+          Overwhisper makes the choice explicit.
+        </p>
+
+        <div class="switchboard">
+          <div class="switch-row">
+            <h3>WhisperKit</h3>
+            <p>Local Whisper models, from small fast English models to multilingual Large v3 Turbo.</p>
+            <span class="badge">On device</span>
           </div>
-          <div class="proof-item">
-            <strong>Cursor-aware</strong>
-            <span>Transcribed text lands in the app you were already using.</span>
+          <div class="switch-row">
+            <h3>Parakeet</h3>
+            <p>Local FluidAudio transcription with Parakeet v2 English and Parakeet v3 multilingual support.</p>
+            <span class="badge">On device</span>
           </div>
-          <div class="proof-item">
-            <strong>Real workflow</strong>
-            <span>Hotkeys, overlay, history, retry, and input device selection.</span>
-          </div>
-          <div class="proof-item">
-            <strong>FOSS</strong>
-            <span>Free, open source, and built to avoid pointless subscriptions.</span>
+          <div class="switch-row">
+            <h3>OpenAI</h3>
+            <p>Optional Whisper API transcription, including fallback when local WhisperKit transcription fails.</p>
+            <span class="badge cloud">Opt-in cloud</span>
           </div>
         </div>
       </div>
+    </section>
 
-      <section id="features">
-        <div class="shell">
-          <div class="section-heading">
-            <div class="label">Features</div>
-            <h2>Dictation that fits into the tools you already use.</h2>
-            <p>
-              Overwhisper is not a separate notes silo. It is a fast input method
-              for your Mac, with the controls serious daily use needs.
-            </p>
-          </div>
+    <section id="workbench" class="workbench">
+      <div class="shell">
+        <div class="section-kicker">Workbench</div>
+        <h2>This is the unglamorous stuff that makes dictation usable.</h2>
+        <p class="intro">
+          A dictation app lives or dies on the boring edges: hotkeys, microphones,
+          silence, retries, cleanup, and getting out of your way.
+        </p>
 
-          <div class="feature-grid">
-            <article class="feature-card">
-              <span class="tag">Hotkeys</span>
-              <h3>Toggle or push-to-talk</h3>
-              <p>Use Option+Space to toggle by default, or Option+Shift+Space for push-to-talk. Both shortcuts are configurable.</p>
-            </article>
-            <article class="feature-card">
-              <span class="tag">Output</span>
-              <h3>Paste at the cursor</h3>
-              <p>Dictate into Messages, Slack, Notes, browsers, editors, issue trackers, or anywhere else macOS accepts text.</p>
-            </article>
-            <article class="feature-card">
-              <span class="tag">Recording</span>
-              <h3>Useful guardrails</h3>
-              <p>Choose your microphone, skip silent recordings, set duration limits, and optionally mute built-in speaker audio while recording.</p>
-            </article>
-            <article class="feature-card">
-              <span class="tag">Accuracy</span>
-              <h3>Custom vocabulary</h3>
-              <p>Bias the model toward names, acronyms, product terms, and phrases that generic dictation often gets wrong.</p>
-            </article>
-            <article class="feature-card">
-              <span class="tag">Cleanup</span>
-              <h3>Text replacements</h3>
-              <p>Fix predictable mistakes automatically, such as replacing "Cloud Code" with "Claude Code" after transcription.</p>
-            </article>
-            <article class="feature-card">
-              <span class="tag">Recovery</span>
-              <h3>History and retry</h3>
-              <p>Copy recent transcriptions, inspect local debug sessions, play back captured audio, and retry failed transcriptions.</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section id="engines">
-        <div class="shell split">
-          <div class="section-heading">
-            <div class="label">Engines</div>
-            <h2>Choose local by default. Use cloud only when you want it.</h2>
-            <p>
-              Overwhisper supports multiple transcription paths because speech
-              quality, languages, and latency needs vary. You stay in control.
-            </p>
-          </div>
-
-          <div class="panel">
-            <div class="panel-header">
-              <span>Transcription options</span>
-              <span class="badge">Local-first</span>
-            </div>
-            <div class="panel-content">
-              <div class="model-list">
-                <div class="model-row">
-                  <div>
-                    <strong>WhisperKit</strong>
-                    <span>Local Whisper models, including English-only and multilingual sizes from Tiny through Large v3 Turbo.</span>
-                  </div>
-                  <span class="badge">On device</span>
-                </div>
-                <div class="model-row">
-                  <div>
-                    <strong>Parakeet</strong>
-                    <span>Local FluidAudio engine with Parakeet v2 English and Parakeet v3 multilingual model choices.</span>
-                  </div>
-                  <span class="badge">On device</span>
-                </div>
-                <div class="model-row">
-                  <div>
-                    <strong>OpenAI Whisper API</strong>
-                    <span>Optional cloud transcription, plus optional fallback when local WhisperKit transcription fails.</span>
-                  </div>
-                  <span class="badge">Optional</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="privacy" class="privacy-band">
-        <div class="shell privacy-layout">
-          <div class="section-heading">
-            <div class="label">Privacy</div>
-            <h2>Your voice should not need a round trip to a server.</h2>
-            <p>
-              Local transcription keeps the default path simple: audio is recorded,
-              transcribed, and inserted on your Mac. Cloud transcription is opt-in.
-            </p>
-            <p class="privacy-note">
-              Recent debug sessions are stored locally so you can retry failures
-              and troubleshoot. They are capped and clearable from Settings.
-            </p>
-          </div>
-
-          <div class="privacy-list">
-            <div class="privacy-item">
-              <strong>Local models by default</strong>
-              <p>WhisperKit and Parakeet process speech on Apple Silicon without sending audio to a transcription service.</p>
-            </div>
-            <div class="privacy-item">
-              <strong>Optional cloud path</strong>
-              <p>OpenAI is used only when selected, or when you enable cloud fallback and local transcription fails.</p>
-            </div>
-            <div class="privacy-item">
-              <strong>No app analytics</strong>
-              <p>Overwhisper does not include app telemetry or behavior tracking. API keys are stored in macOS Keychain.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="workflow-section">
-        <div class="shell">
-          <div class="section-heading">
-            <div class="label">Workflow</div>
-            <h2>From thought to text in one gesture.</h2>
-          </div>
-
-          <div class="steps">
-            <article class="step">
-              <h3>Focus a field</h3>
-              <p>Put your cursor in any app where you want the text to appear.</p>
-            </article>
-            <article class="step">
-              <h3>Press a hotkey</h3>
-              <p>Toggle recording or hold push-to-talk, depending on how you work.</p>
-            </article>
-            <article class="step">
-              <h3>Speak naturally</h3>
-              <p>The overlay confirms recording state and input level while you dictate.</p>
-            </article>
-            <article class="step">
-              <h3>Keep working</h3>
-              <p>Overwhisper transcribes, cleans up replacements, and pastes the result.</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section class="cta">
-        <div class="shell">
-          <div class="cta-box">
-            <h2>Stop paying rent on your own hardware.</h2>
-            <p>
-              Overwhisper gives Mac users practical, polished dictation with
-              local models, open source code, and no subscription for the core workflow.
-            </p>
-            <div class="cta-actions">
-              <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download the latest release</a>
-              <a href="https://github.com/OverseedAI/overwhisper" class="button">Read the source</a>
-              <a href="https://buymeacoffee.com/halshin" class="button">Support development</a>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer>
-      <div class="shell footer-inner">
-        <a href="#" class="brand">
-          <img src="icon.png" alt="Overwhisper icon">
-          <span>Overwhisper</span>
-        </a>
-        <div class="footer-links">
-          <a href="https://github.com/OverseedAI/overwhisper">GitHub</a>
-          <a href="https://github.com/OverseedAI/overwhisper/releases">Releases</a>
-          <a href="https://github.com/OverseedAI/overwhisper/issues">Issues</a>
-          <a href="https://overseed.ai">Overseed</a>
+        <div class="feature-grid">
+          <article class="feature">
+            <small>Hotkeys</small>
+            <h3>Toggle or push-to-talk</h3>
+            <p>Tap Option+Space to toggle, or hold Option+Shift+Space to record only while pressed. Both are configurable.</p>
+          </article>
+          <article class="feature">
+            <small>Microphones</small>
+            <h3>Choose the right input</h3>
+            <p>Use the system default microphone or pick a specific device when your desk setup gets complicated.</p>
+          </article>
+          <article class="feature">
+            <small>Cleanup</small>
+            <h3>Vocabulary and replacements</h3>
+            <p>Bias names and acronyms, then fix predictable mistakes like Cloud Code to Claude Code automatically.</p>
+          </article>
+          <article class="feature">
+            <small>Recovery</small>
+            <h3>History, playback, retry</h3>
+            <p>Copy recent transcripts, inspect local debug sessions, play back captured audio, and retry failures.</p>
+          </article>
+          <article class="feature">
+            <small>Guardrails</small>
+            <h3>Skip silence and limit runs</h3>
+            <p>Ignore accidental empty recordings and set a duration limit for the times you forget recording is on.</p>
+          </article>
+          <article class="feature">
+            <small>Feedback</small>
+            <h3>Overlay without theater</h3>
+            <p>A compact waveform shows that recording is live, then gets out of the way when transcription is done.</p>
+          </article>
         </div>
       </div>
-    </footer>
-  </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-kicker">Flow</div>
+        <h2>Four moves. No transcript janitor work.</h2>
+        <div class="steps">
+          <article class="step">
+            <span class="number">1</span>
+            <h3>Focus any field</h3>
+            <p>Messages, Notes, your browser, an IDE, a ticket, a doc, wherever text goes.</p>
+          </article>
+          <article class="step">
+            <span class="number">2</span>
+            <h3>Press the hotkey</h3>
+            <p>Toggle recording or use push-to-talk. The menu bar app stays quiet until needed.</p>
+          </article>
+          <article class="step">
+            <span class="number">3</span>
+            <h3>Say the thing</h3>
+            <p>Local models transcribe on your Mac, with optional language hints and translation.</p>
+          </article>
+          <article class="step">
+            <span class="number">4</span>
+            <h3>Keep moving</h3>
+            <p>The text is pasted at your cursor. If Accessibility is missing, it is copied to clipboard.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="privacy">
+      <div class="shell privacy-note">
+        <h2>Your voice should not need a server trip.</h2>
+        <div>
+          <p>
+            With WhisperKit or Parakeet, audio stays on your Mac. OpenAI is used
+            only when selected, or when you enable fallback and local transcription fails.
+          </p>
+          <p>
+            Recent debug sessions are stored locally so retry and troubleshooting
+            work. They are capped and clearable from Settings. API keys live in Keychain.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="shell">
+        <h2>Use your Mac like it has a microphone and a Neural Engine.</h2>
+        <p>
+          Overwhisper is free, open source, and built for people who want real
+          dictation value without another subscription meter running in the background.
+        </p>
+        <div class="cta-actions">
+          <a href="https://github.com/OverseedAI/overwhisper/releases/latest" class="button button-primary">Download Overwhisper</a>
+          <a href="https://github.com/OverseedAI/overwhisper" class="button">GitHub</a>
+          <a href="https://buymeacoffee.com/halshin" class="button">Support development</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-inner">
+      <a href="#" class="brand">
+        <img src="icon.png" alt="Overwhisper icon">
+        <span>Overwhisper</span>
+      </a>
+      <div class="footer-links">
+        <a href="https://github.com/OverseedAI/overwhisper">Source</a>
+        <a href="https://github.com/OverseedAI/overwhisper/releases">Releases</a>
+        <a href="https://github.com/OverseedAI/overwhisper/issues">Issues</a>
+        <a href="https://overseed.ai">Overseed</a>
+      </div>
+    </div>
+  </footer>
 </body>
 </html>
