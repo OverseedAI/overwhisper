@@ -210,7 +210,14 @@ class AudioDeviceManager: ObservableObject {
 }
 
 class AudioRecorder: ObservableObject {
-    private var audioEngine = AVAudioEngine()
+    // Input-only HAL audio unit. We deliberately avoid AVAudioEngine here: its
+    // render loop is clocked by the system default *output* device, so a flaky
+    // output (e.g. Bluetooth headphones) can break input capture even when the
+    // mic itself is fine. A HAL output unit in input-only mode binds to exactly
+    // one input device and never opens an output/speaker device.
+    private var inputUnit: AudioUnit?
+    private var clientFormat: AVAudioFormat?
+    private var recordingFormat: AVAudioFormat?
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
     private var selectedInputDeviceID: AudioDeviceID?
@@ -242,11 +249,9 @@ class AudioRecorder: ObservableObject {
     init() {}
 
     func setInputDevice(_ device: AudioInputDevice?) {
+        // The device is bound when recording actually starts (makeInputUnit),
+        // so here we only remember the selection.
         selectedInputDeviceID = device?.id
-
-        if !audioEngine.isRunning {
-            try? applyInputDevice()
-        }
     }
 
     func startRecording() throws {
@@ -257,16 +262,11 @@ class AudioRecorder: ObservableObject {
         sumOfSquares = 0
         totalSamples = 0
 
-        // Check microphone permission before accessing inputNode
+        // Check microphone permission before opening the device
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
             break
-        case .notDetermined:
-            // Request permission synchronously by triggering the inputNode access
-            // This will prompt the user, but may still crash if denied
-            // Better to request permission on app launch
-            throw AudioRecorderError.noPermission
-        case .denied, .restricted:
+        case .notDetermined, .denied, .restricted:
             throw AudioRecorderError.noPermission
         @unknown default:
             throw AudioRecorderError.noPermission
@@ -275,46 +275,53 @@ class AudioRecorder: ObservableObject {
         // Create temporary file for recording
         let tempDir = FileManager.default.temporaryDirectory
         let fileName = "overwhisper_recording_\(UUID().uuidString).wav"
-        recordingURL = tempDir.appendingPathComponent(fileName)
+        let url = tempDir.appendingPathComponent(fileName)
+        recordingURL = url
 
-        guard let url = recordingURL else {
-            throw AudioRecorderError.failedToCreateFile
+        // Resolve the input device: explicit selection, else the system default
+        // input. A HAL unit defaults to the default *output* device, so the input
+        // device must always be bound explicitly.
+        guard let deviceID = selectedInputDeviceID ?? AudioDeviceManager.defaultInputDeviceID() else {
+            throw AudioRecorderError.deviceConfigurationFailed
         }
 
-        // Create fresh engine to ensure clean state for built-in mic
-        audioEngine = AVAudioEngine()
-
+        // Build the input unit, falling back to the default input device if the
+        // explicitly-selected one can't be opened.
+        let unit: AudioUnit
+        let client: AVAudioFormat
         do {
-            try applyInputDevice()
+            (unit, client) = try makeInputUnit(deviceID: deviceID)
         } catch {
+            guard let fallback = AudioDeviceManager.defaultInputDeviceID(), fallback != deviceID else {
+                throw error
+            }
+            AppLogger.audio.error("Input device \(deviceID) failed to open — falling back to system default")
             selectedInputDeviceID = nil
-            try applyInputDevice()
+            (unit, client) = try makeInputUnit(deviceID: fallback)
         }
+        inputUnit = unit
+        clientFormat = client
 
-        let inputNode = audioEngine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
         AppLogger.audio.info(
-            "Recording start — selected device: \(self.selectedInputDeviceID.map(String.init) ?? "system default"), input format: \(inputFormat.sampleRate) Hz, \(inputFormat.channelCount) ch, common=\(inputFormat.commonFormat.rawValue), interleaved=\(inputFormat.isInterleaved)"
+            "Recording start — device id \(deviceID) (\(self.selectedInputDeviceID == nil ? "system default" : "selected")), input format: \(client.sampleRate) Hz, \(client.channelCount) ch"
         )
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            AppLogger.audio.error("Invalid input format from audio engine")
-            throw AudioRecorderError.invalidFormat
-        }
 
-        // Create the recording format (16kHz, mono, 16-bit PCM)
-        guard let recordingFormat = AVAudioFormat(
+        // Target format for transcription: 16kHz mono float32
+        guard let recording = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: sampleRate,
             channels: channels,
             interleaved: false
         ) else {
+            cleanupAfterFailure()
             throw AudioRecorderError.invalidFormat
         }
+        recordingFormat = recording
 
         converter = nil
         converterInputFormat = nil
 
-        // Create the audio file
+        // On-disk format: 16kHz mono 16-bit PCM WAV
         let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: sampleRate,
@@ -322,24 +329,184 @@ class AudioRecorder: ObservableObject {
             interleaved: true
         )!
 
-        audioFile = try AVAudioFile(
-            forWriting: url,
-            settings: outputFormat.settings,
-            commonFormat: .pcmFormatFloat32,
-            interleaved: false
-        )
-
-        // Install tap on input node
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, time in
-            self?.processAudioBuffer(buffer, recordingFormat: recordingFormat)
+        do {
+            audioFile = try AVAudioFile(
+                forWriting: url,
+                settings: outputFormat.settings,
+                commonFormat: .pcmFormatFloat32,
+                interleaved: false
+            )
+        } catch {
+            cleanupAfterFailure()
+            throw error
         }
 
-        audioEngine.prepare()
-        try audioEngine.start()
+        // Wire the input render callback (passing self via the opaque refcon)
+        var callbackStruct = AURenderCallbackStruct(
+            inputProc: { inRefCon, ioActionFlags, inTimeStamp, inBusNumber, inNumberFrames, _ in
+                let recorder = Unmanaged<AudioRecorder>.fromOpaque(inRefCon).takeUnretainedValue()
+                return recorder.renderInput(
+                    flags: ioActionFlags,
+                    timeStamp: inTimeStamp,
+                    busNumber: inBusNumber,
+                    frameCount: inNumberFrames
+                )
+            },
+            inputProcRefCon: Unmanaged.passUnretained(self).toOpaque()
+        )
+        var status = AudioUnitSetProperty(
+            unit,
+            kAudioOutputUnitProperty_SetInputCallback,
+            kAudioUnitScope_Global,
+            0,
+            &callbackStruct,
+            UInt32(MemoryLayout<AURenderCallbackStruct>.size)
+        )
+        guard status == noErr else {
+            AppLogger.audio.error("SetInputCallback failed: \(status)")
+            cleanupAfterFailure()
+            throw AudioRecorderError.deviceConfigurationFailed
+        }
+
+        status = AudioUnitInitialize(unit)
+        guard status == noErr else {
+            AppLogger.audio.error("AudioUnitInitialize failed: \(status)")
+            cleanupAfterFailure()
+            throw AudioRecorderError.deviceConfigurationFailed
+        }
+
+        status = AudioOutputUnitStart(unit)
+        guard status == noErr else {
+            AppLogger.audio.error("AudioOutputUnitStart failed: \(status)")
+            cleanupAfterFailure()
+            throw AudioRecorderError.deviceConfigurationFailed
+        }
+
         isRecording = true
 
         // Start level monitoring
         startLevelMonitoring()
+    }
+
+    /// Pulls captured audio from the input unit and feeds it through the existing
+    /// conversion/metering path. Runs on a realtime audio thread.
+    private func renderInput(
+        flags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
+        timeStamp: UnsafePointer<AudioTimeStamp>,
+        busNumber: UInt32,
+        frameCount: UInt32
+    ) -> OSStatus {
+        guard let unit = inputUnit, let clientFormat, let recordingFormat else {
+            return noErr
+        }
+
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: clientFormat, frameCapacity: frameCount) else {
+            logOnce("render-alloc") {
+                AppLogger.audio.error("Failed to allocate render buffer (\(frameCount) frames)")
+            }
+            return noErr
+        }
+        buffer.frameLength = frameCount
+
+        let status = AudioUnitRender(unit, flags, timeStamp, busNumber, frameCount, buffer.mutableAudioBufferList)
+        guard status == noErr else {
+            logOnce("render-error") {
+                AppLogger.audio.error("AudioUnitRender failed: \(status)")
+            }
+            return status
+        }
+
+        processAudioBuffer(buffer, recordingFormat: recordingFormat)
+        return noErr
+    }
+
+    /// Creates an input-only HAL audio unit bound to `deviceID`, configured to
+    /// deliver float32 non-interleaved audio at the device's native rate/channels.
+    private func makeInputUnit(deviceID: AudioDeviceID) throws -> (AudioUnit, AVAudioFormat) {
+        var desc = AudioComponentDescription(
+            componentType: kAudioUnitType_Output,
+            componentSubType: kAudioUnitSubType_HALOutput,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0,
+            componentFlagsMask: 0
+        )
+        guard let component = AudioComponentFindNext(nil, &desc) else {
+            throw AudioRecorderError.deviceConfigurationFailed
+        }
+
+        var unitOptional: AudioUnit?
+        var status = AudioComponentInstanceNew(component, &unitOptional)
+        guard status == noErr, let unit = unitOptional else {
+            throw AudioRecorderError.deviceConfigurationFailed
+        }
+
+        func fail(_ message: String) -> AudioRecorderError {
+            AppLogger.audio.error("\(message)")
+            AudioComponentInstanceDispose(unit)
+            return AudioRecorderError.deviceConfigurationFailed
+        }
+
+        let flagSize = UInt32(MemoryLayout<UInt32>.size)
+
+        // Enable input (bus 1), disable output (bus 0): input-only.
+        var enableInput: UInt32 = 1
+        status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &enableInput, flagSize)
+        guard status == noErr else { throw fail("EnableIO(input) failed: \(status)") }
+
+        var disableOutput: UInt32 = 0
+        status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &disableOutput, flagSize)
+        guard status == noErr else { throw fail("DisableIO(output) failed: \(status)") }
+
+        // Bind to the chosen input device — never an output device.
+        var device = deviceID
+        status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, UInt32(MemoryLayout<AudioDeviceID>.size))
+        guard status == noErr else { throw fail("Set CurrentDevice failed: \(status)") }
+
+        // Read the device's native input format (input scope, bus 1).
+        var hwFormat = AudioStreamBasicDescription()
+        var fmtSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        status = AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 1, &hwFormat, &fmtSize)
+        guard status == noErr, hwFormat.mSampleRate > 0, hwFormat.mChannelsPerFrame > 0 else {
+            throw fail("Get hardware StreamFormat failed: \(status), rate=\(hwFormat.mSampleRate), ch=\(hwFormat.mChannelsPerFrame)")
+        }
+
+        // Ask the unit to hand us float32 non-interleaved at that rate/channels
+        // (output scope, bus 1 — i.e. the format delivered to our callback).
+        guard let client = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: hwFormat.mSampleRate,
+            channels: hwFormat.mChannelsPerFrame,
+            interleaved: false
+        ) else {
+            throw fail("Unsupported client format: \(hwFormat.mSampleRate) Hz, \(hwFormat.mChannelsPerFrame) ch")
+        }
+        var clientASBD = client.streamDescription.pointee
+        status = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &clientASBD, UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
+        guard status == noErr else { throw fail("Set client StreamFormat failed: \(status)") }
+
+        return (unit, client)
+    }
+
+    /// Stops, uninitializes and disposes the input unit. Safe to call even if the
+    /// unit was never started/initialized (those calls just no-op with an error).
+    private func teardownInputUnit() {
+        guard let unit = inputUnit else { return }
+        AudioOutputUnitStop(unit)
+        AudioUnitUninitialize(unit)
+        AudioComponentInstanceDispose(unit)
+        inputUnit = nil
+    }
+
+    /// Tears down a half-built recording session after a setup failure.
+    private func cleanupAfterFailure() {
+        teardownInputUnit()
+        audioFile = nil
+        converter = nil
+        converterInputFormat = nil
+        if let url = recordingURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        recordingURL = nil
     }
 
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, recordingFormat: AVAudioFormat) {
@@ -460,9 +627,8 @@ class AudioRecorder: ObservableObject {
         levelUpdateTimer?.invalidate()
         levelUpdateTimer = nil
 
-        // Stop engine and remove tap
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        // Stop and dispose the input unit
+        teardownInputUnit()
 
         // Close the audio file
         audioFile = nil
@@ -492,8 +658,7 @@ class AudioRecorder: ObservableObject {
         levelUpdateTimer?.invalidate()
         levelUpdateTimer = nil
 
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        teardownInputUnit()
         audioFile = nil
         converter = nil
         converterInputFormat = nil
@@ -508,18 +673,15 @@ class AudioRecorder: ObservableObject {
         recordingURL = nil
     }
 
-    /// Resets the audio engine after system wake or audio route changes.
-    /// This ensures the engine is ready for the next recording session.
+    /// Tears down any active input unit after a system wake or audio route change
+    /// so the next recording starts clean. Kept under the old name because callers
+    /// (AppDelegate) invoke it on device changes and wake. The device is re-bound
+    /// fresh on the next `startRecording()`, so nothing needs reapplying here.
     func resetAudioEngine() {
-        // Stop engine if running (shouldn't be after wake, but be safe)
-        if audioEngine.isRunning {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            audioEngine.stop()
-        }
+        levelUpdateTimer?.invalidate()
+        levelUpdateTimer = nil
 
-        // Reset the audio engine to clear any stale state
-        audioEngine.reset()
-        audioEngine = AVAudioEngine()
+        teardownInputUnit()
 
         isRecording = false
         currentLevel = 0
@@ -527,10 +689,6 @@ class AudioRecorder: ObservableObject {
         recordingURL = nil
         converter = nil
         converterInputFormat = nil
-
-        if let selectedInputDeviceID {
-            try? applyInputDevice()
-        }
     }
 
     private func ensureConverter(for inputFormat: AVAudioFormat, recordingFormat: AVAudioFormat) -> AVAudioConverter? {
@@ -565,28 +723,6 @@ class AudioRecorder: ObservableObject {
             && lhs.isInterleaved == rhs.isInterleaved
     }
 
-    func applyInputDevice() throws {
-        // If using system default, don't override - let AVAudioEngine use its default
-        guard let targetDeviceID = selectedInputDeviceID else { return }
-
-        guard let audioUnit = audioEngine.inputNode.audioUnit else {
-            throw AudioRecorderError.deviceConfigurationFailed
-        }
-
-        var deviceID = targetDeviceID
-        let status = AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &deviceID,
-            UInt32(MemoryLayout<AudioDeviceID>.size)
-        )
-
-        guard status == noErr else {
-            throw AudioRecorderError.deviceConfigurationFailed
-        }
-    }
 }
 
 enum AudioRecorderError: LocalizedError {
