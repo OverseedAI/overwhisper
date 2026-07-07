@@ -9,3 +9,4 @@ DerivedData/
 .DS_Store
 *.app
 .idea/
+__pycache__/

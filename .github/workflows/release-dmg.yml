@@ -258,39 +258,10 @@ jobs:
           PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
           ED_SIG=$(echo "$SPARKLE_SIGNATURE" | grep -o 'edSignature="[^"]*"' | cut -d'"' -f2)
 
+          # Release notes for the update dialog are pulled from CHANGELOG.md by
+          # the script (the `## <version>` section). See scripts/update_appcast.py.
           export DMG_SIZE DOWNLOAD_URL PUB_DATE ED_SIG
-
-          python3 -c "
-          import os
-
-          version = os.environ['VERSION']
-          build = os.environ['BUILD_NUMBER']
-          size = os.environ['DMG_SIZE']
-          url = os.environ['DOWNLOAD_URL']
-          date = os.environ['PUB_DATE']
-          sig = os.environ['ED_SIG']
-
-          item = f'''    <item>
-            <title>Version {version}</title>
-            <pubDate>{date}</pubDate>
-            <sparkle:version>{build}</sparkle:version>
-            <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
-            <enclosure
-              url=\"{url}\"
-              length=\"{size}\"
-              type=\"application/octet-stream\"
-              sparkle:edSignature=\"{sig}\"
-            />
-          </item>'''
-
-          with open('docs/appcast.xml', 'r') as f:
-              content = f.read()
-
-          content = content.replace('</language>', '</language>\n' + item)
-
-          with open('docs/appcast.xml', 'w') as f:
-              f.write(content)
-          "
+          python3 scripts/update_appcast.py
 
           cat docs/appcast.xml
 

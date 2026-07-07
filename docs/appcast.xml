@@ -10,6 +10,7 @@
   <pubDate>Tue, 07 Jul 2026 22:28:45 +0000</pubDate>
   <sparkle:version>42</sparkle:version>
   <sparkle:shortVersionString>1.7.1</sparkle:shortVersionString>
+  <description><![CDATA[<h2>Version 1.7.1</h2><ul><li>Fixed recording failing when your microphone and speakers are different devices (e.g. an audio interface for input and Bluetooth headphones for output).</li><li>Added support for multi-channel audio interfaces such as the Focusrite Scarlett.</li><li>Quick taps in Toggle mode are now reliably treated as taps instead of hold-to-talk.</li><li>The start chime is no longer cut off, and system audio is always restored after a recording ends or fails.</li></ul>]]></description>
   <enclosure
     url="https://github.com/OverseedAI/overwhisper/releases/download/v1.7.1/Overwhisper-1.7.1.dmg"
     length="6959018"
