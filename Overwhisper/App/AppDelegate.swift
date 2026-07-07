@@ -43,10 +43,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var errorResetTimer: Timer?
 
     // Tap-vs-hold on the toggle hotkey: tap toggles, holding past the
-    // threshold acts as push-to-talk (release stops and transcribes).
-    private static let tapHoldThreshold: TimeInterval = 0.5
+    // threshold acts as push-to-talk (release stops and transcribes). Set above
+    // a natural "quick tap" (which can run 0.7–0.9s, especially for F-key +
+    // modifier combos) so taps aren't misread as holds and stopped on release.
+    private static let tapHoldThreshold: TimeInterval = 1.0
     private var toggleKeyDownAt: Date?
     private var toggleKeyDownStartedRecording = false
+    // Whether we muted the system output for the current recording. Tracked so we
+    // only ever restore a mute we actually applied (mute is deferred until the
+    // start chime finishes, so it may not have happened yet when a recording ends).
+    private var systemAudioMuted = false
     private var iconAnimationTimer: Timer?
     private var iconAnimationFrame: Int = 0
     private var isLoadingAnimation: Bool = false
@@ -681,6 +687,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleHotkeyEvent(_ event: HotkeyEvent, mode: HotkeyMode) {
+        let eventName = event == .keyDown ? "keyDown" : "keyUp"
+        let modeName = mode == .toggle ? "toggle" : "pushToTalk"
+        AppLogger.hotkey.debug("hotkey \(eventName, privacy: .public)/\(modeName, privacy: .public) state=\(String(describing: self.appState.recordingState), privacy: .public)")
         switch mode {
         case .pushToTalk:
             if event == .keyDown {
@@ -703,6 +712,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             case .keyUp:
                 // Held past the tap threshold → the user treated it as
                 // push-to-talk, so release stops and transcribes.
+                let heldFor = toggleKeyDownAt.map { Date().timeIntervalSince($0) } ?? -1
+                AppLogger.hotkey.debug("toggle keyUp — heldFor=\(heldFor, privacy: .public)s threshold=\(Self.tapHoldThreshold, privacy: .public)s startedRec=\(self.toggleKeyDownStartedRecording, privacy: .public)")
                 if toggleKeyDownStartedRecording,
                    appState.recordingState == .recording,
                    let downAt = toggleKeyDownAt,
@@ -721,6 +732,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if appState.recordingState.isIdle {
             startRecording()
         }
+    }
+
+    private func muteSystemAudioForRecording() {
+        guard appState.muteSystemAudioWhileRecording, !systemAudioMuted else { return }
+        SystemAudioManager.muteSystemAudio()
+        systemAudioMuted = true
+    }
+
+    private func restoreSystemAudioIfNeeded() {
+        guard systemAudioMuted else { return }
+        SystemAudioManager.restoreSystemAudio()
+        systemAudioMuted = false
     }
 
     private func startRecording() {
@@ -756,14 +779,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            // Play sound on start if enabled (before muting)
+            // Play the start chime (if enabled) before muting.
+            var chimeDuration: TimeInterval = 0
             if appState.playSoundOnStart {
-                NSSound(named: .init("Glass"))?.play()
-            }
-
-            // Mute system audio if enabled
-            if appState.muteSystemAudioWhileRecording {
-                SystemAudioManager.muteSystemAudio()
+                let chime = NSSound(named: .init("Glass"))
+                chime?.play()
+                chimeDuration = chime?.duration ?? 0.5
             }
 
             try audioRecorder.startRecording()
@@ -771,8 +792,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appState.startRecordingTimer()
             startRecordingLimitTimer()
             overlayWindow.show(position: appState.overlayPosition)
+
+            // Mute after the chime finishes so muting the system output doesn't
+            // cut it off. The mic's own startup latency means nothing meaningful
+            // is captured during this brief window anyway.
+            if chimeDuration > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + chimeDuration) { [weak self] in
+                    guard let self, self.appState.recordingState == .recording else { return }
+                    self.muteSystemAudioForRecording()
+                }
+            } else {
+                muteSystemAudioForRecording()
+            }
         } catch {
             audioRecorder.resetAudioEngine()
+
+            // Recording never started — undo the mute if we somehow applied it.
+            restoreSystemAudioIfNeeded()
 
             let deviceName = appState.selectedInputDeviceUID.isEmpty
                 ? "System Default"
@@ -820,10 +856,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         stopRecordingLimitTimer()
 
-        // Restore system audio if it was muted
-        if appState.muteSystemAudioWhileRecording {
-            SystemAudioManager.restoreSystemAudio()
-        }
+        // Restore system audio if we muted it for this recording
+        restoreSystemAudioIfNeeded()
 
         let recordingDuration = appState.recordingDuration
         appState.stopRecordingTimer()
@@ -1185,10 +1219,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         stopRecordingLimitTimer()
 
-        // Restore system audio if it was muted
-        if appState.muteSystemAudioWhileRecording {
-            SystemAudioManager.restoreSystemAudio()
-        }
+        // Restore system audio if we muted it for this recording
+        restoreSystemAudioIfNeeded()
 
         appState.stopRecordingTimer()
         audioRecorder.cancelRecording()

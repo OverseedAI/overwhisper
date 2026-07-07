@@ -303,7 +303,7 @@ class AudioRecorder: ObservableObject {
         clientFormat = client
 
         AppLogger.audio.info(
-            "Recording start — device id \(deviceID) (\(self.selectedInputDeviceID == nil ? "system default" : "selected")), input format: \(client.sampleRate) Hz, \(client.channelCount) ch"
+            "Recording start — device id \(deviceID, privacy: .public) (\(self.selectedInputDeviceID == nil ? "system default" : "selected", privacy: .public)), input format: \(client.sampleRate, privacy: .public) Hz, \(client.channelCount, privacy: .public) ch"
         )
 
         // Target format for transcription: 16kHz mono float32
@@ -363,21 +363,21 @@ class AudioRecorder: ObservableObject {
             UInt32(MemoryLayout<AURenderCallbackStruct>.size)
         )
         guard status == noErr else {
-            AppLogger.audio.error("SetInputCallback failed: \(status)")
+            AppLogger.audio.error("SetInputCallback failed: \(status, privacy: .public)")
             cleanupAfterFailure()
             throw AudioRecorderError.deviceConfigurationFailed
         }
 
         status = AudioUnitInitialize(unit)
         guard status == noErr else {
-            AppLogger.audio.error("AudioUnitInitialize failed: \(status)")
+            AppLogger.audio.error("AudioUnitInitialize failed: \(status, privacy: .public)")
             cleanupAfterFailure()
             throw AudioRecorderError.deviceConfigurationFailed
         }
 
         status = AudioOutputUnitStart(unit)
         guard status == noErr else {
-            AppLogger.audio.error("AudioOutputUnitStart failed: \(status)")
+            AppLogger.audio.error("AudioOutputUnitStart failed: \(status, privacy: .public)")
             cleanupAfterFailure()
             throw AudioRecorderError.deviceConfigurationFailed
         }
@@ -441,7 +441,7 @@ class AudioRecorder: ObservableObject {
         }
 
         func fail(_ message: String) -> AudioRecorderError {
-            AppLogger.audio.error("\(message)")
+            AppLogger.audio.error("makeInputUnit: \(message, privacy: .public)")
             AudioComponentInstanceDispose(unit)
             return AudioRecorderError.deviceConfigurationFailed
         }
@@ -472,15 +472,36 @@ class AudioRecorder: ObservableObject {
 
         // Ask the unit to hand us float32 non-interleaved at that rate/channels
         // (output scope, bus 1 — i.e. the format delivered to our callback).
-        guard let client = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: hwFormat.mSampleRate,
-            channels: hwFormat.mChannelsPerFrame,
-            interleaved: false
-        ) else {
-            throw fail("Unsupported client format: \(hwFormat.mSampleRate) Hz, \(hwFormat.mChannelsPerFrame) ch")
+        //
+        // Build the format from a raw ASBD rather than
+        // AVAudioFormat(commonFormat:sampleRate:channels:interleaved:): that
+        // convenience initializer returns nil for >2 channels (no inferable
+        // layout), and multi-channel interfaces like the Scarlett Solo report 4
+        // input channels. We downmix to mono later via the converter's channelMap.
+        let channelCount = hwFormat.mChannelsPerFrame
+        var clientASBD = AudioStreamBasicDescription(
+            mSampleRate: hwFormat.mSampleRate,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved,
+            mBytesPerPacket: 4,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 4,
+            mChannelsPerFrame: channelCount,
+            mBitsPerChannel: 32,
+            mReserved: 0
+        )
+        // AVAudioFormat requires an explicit channel layout above stereo, so give
+        // multi-channel devices (e.g. the 4-channel Scarlett Solo) a discrete one.
+        let client: AVAudioFormat?
+        if channelCount > 2 {
+            client = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | channelCount)
+                .flatMap { AVAudioFormat(streamDescription: &clientASBD, channelLayout: $0) }
+        } else {
+            client = AVAudioFormat(streamDescription: &clientASBD)
         }
-        var clientASBD = client.streamDescription.pointee
+        guard let client else {
+            throw fail("Unsupported client format: \(hwFormat.mSampleRate) Hz, \(channelCount) ch")
+        }
         status = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &clientASBD, UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
         guard status == noErr else { throw fail("Set client StreamFormat failed: \(status)") }
 
