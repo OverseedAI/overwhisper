@@ -394,9 +394,12 @@ class AppState: ObservableObject {
     // audioLevel is normalized 0...1 over -40...0 dBFS, so 0.05 ≈ -38 dBFS —
     // the same threshold used to skip silent recordings after the fact.
     private let silenceLevelThreshold: Float = 0.05
-    // -32 dBFS: below this the models still try, but quality may suffer.
+    // -32 dBFS, checked against the window PEAK, not the mean: speech is
+    // bursty, so its 2s mean (with inter-word gaps) sits far below its peaks
+    // and would flag perfectly usable audio. If no 100ms chunk in the window
+    // even peaks at -32 dBFS, the signal is genuinely too weak.
     private let lowLevelThreshold: Float = 0.20
-    // -30 dBFS: hysteresis so the low warning doesn't flicker at the boundary.
+    // -30 dBFS peak: hysteresis so the low warning doesn't flicker at the boundary.
     private let lowClearThreshold: Float = 0.25
     // Warn quickly when nothing has been heard at all…
     private let initialSilenceWarningDelay: TimeInterval = 3.0
@@ -512,15 +515,18 @@ class AppState: ObservableObject {
 
         levelWindow.append(audioLevel)
         if levelWindow.count > levelWindowCapacity { levelWindow.removeFirst() }
-        // audioLevel is linear in dBFS, so this is a rolling mean dB level —
-        // a steady read on whether speech is coming through.
+        // The rolling mean answers "is anything coming through at all" (silence
+        // detection); the window peak answers "is speech strong enough" (low
+        // detection). Speech means are dragged down by natural gaps, so only
+        // the peak is a fair read on signal strength.
         let mean = levelWindow.reduce(0, +) / Float(levelWindow.count)
+        let peak = levelWindow.max() ?? 0
 
         if mean >= silenceLevelThreshold {
             lastAudibleAt = recordingDuration
             hasHeardAudio = true
         }
-        if mean >= lowLevelThreshold {
+        if peak >= lowLevelThreshold {
             lastHealthyAt = recordingDuration
         }
 
@@ -529,8 +535,8 @@ class AppState: ObservableObject {
         let newStatus: MicInputStatus
         if recordingDuration - lastAudibleAt >= silenceDelay {
             newStatus = .silent
-        } else if micInputStatus == .low, mean < lowClearThreshold {
-            // Hysteresis: once warned, require a clearly healthy level to clear
+        } else if micInputStatus == .low, peak < lowClearThreshold {
+            // Hysteresis: once warned, require a clearly healthy peak to clear
             newStatus = .low
         } else if mean >= silenceLevelThreshold,
                   recordingDuration - lastHealthyAt >= lowLevelWarningDelay {
