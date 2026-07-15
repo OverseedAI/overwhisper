@@ -394,13 +394,12 @@ class AppState: ObservableObject {
     // audioLevel is normalized 0...1 over -40...0 dBFS, so 0.05 ≈ -38 dBFS —
     // the same threshold used to skip silent recordings after the fact.
     private let silenceLevelThreshold: Float = 0.05
-    // -32 dBFS, checked against the window PEAK, not the mean: speech is
-    // bursty, so its 2s mean (with inter-word gaps) sits far below its peaks
-    // and would flag perfectly usable audio. If no 100ms chunk in the window
-    // even peaks at -32 dBFS, the signal is genuinely too weak.
+    // -32 dBFS: one-shot health check for the mic itself, not a running
+    // signal monitor. The first time any 100ms chunk reaches this level the
+    // mic is proven working and the low warning is disabled for the rest of
+    // the recording — the warning exists to catch a mic that is broken or
+    // far too quiet in general, not momentary soft speech.
     private let lowLevelThreshold: Float = 0.20
-    // -30 dBFS peak: hysteresis so the low warning doesn't flicker at the boundary.
-    private let lowClearThreshold: Float = 0.25
     // Warn quickly when nothing has been heard at all…
     private let initialSilenceWarningDelay: TimeInterval = 3.0
     // …but tolerate thinking pauses once real speech has come through.
@@ -409,8 +408,8 @@ class AppState: ObservableObject {
     private let levelWindowCapacity = 20  // 2s at the 0.1s tick
     private var levelWindow: [Float] = []
     private var lastAudibleAt: TimeInterval = 0
-    private var lastHealthyAt: TimeInterval = 0
     private var hasHeardAudio = false
+    private var micProvenHealthy = false
 
     init() {
         // Load settings from UserDefaults
@@ -492,8 +491,8 @@ class AppState: ObservableObject {
         recordingDuration = 0
         levelWindow = []
         lastAudibleAt = 0
-        lastHealthyAt = 0
         hasHeardAudio = false
+        micProvenHealthy = false
         micInputStatus = .ok
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -515,19 +514,18 @@ class AppState: ObservableObject {
 
         levelWindow.append(audioLevel)
         if levelWindow.count > levelWindowCapacity { levelWindow.removeFirst() }
-        // The rolling mean answers "is anything coming through at all" (silence
-        // detection); the window peak answers "is speech strong enough" (low
-        // detection). Speech means are dragged down by natural gaps, so only
-        // the peak is a fair read on signal strength.
+        // The rolling mean answers "is anything coming through at all" and
+        // drives silence detection only.
         let mean = levelWindow.reduce(0, +) / Float(levelWindow.count)
-        let peak = levelWindow.max() ?? 0
 
         if mean >= silenceLevelThreshold {
             lastAudibleAt = recordingDuration
             hasHeardAudio = true
         }
-        if peak >= lowLevelThreshold {
-            lastHealthyAt = recordingDuration
+        // One-shot latch: a single healthy chunk proves the mic works, and
+        // the low warning stays off for the rest of the recording.
+        if audioLevel >= lowLevelThreshold {
+            micProvenHealthy = true
         }
 
         let silenceDelay = hasHeardAudio ? ongoingSilenceWarningDelay : initialSilenceWarningDelay
@@ -535,14 +533,16 @@ class AppState: ObservableObject {
         let newStatus: MicInputStatus
         if recordingDuration - lastAudibleAt >= silenceDelay {
             newStatus = .silent
-        } else if micInputStatus == .low, peak < lowClearThreshold {
-            // Hysteresis: once warned, require a clearly healthy peak to clear
+        } else if micProvenHealthy {
+            newStatus = .ok
+        } else if micInputStatus == .low {
+            // Sticky: only a healthy chunk (latch above) clears the warning.
             newStatus = .low
         } else if mean >= silenceLevelThreshold,
-                  recordingDuration - lastHealthyAt >= lowLevelWarningDelay {
-            // Signal is present but weak. The audibility guard keeps thinking
-            // pauses (true silence) out of this branch — those are handled by
-            // the silent path on its own, longer delay.
+                  recordingDuration >= lowLevelWarningDelay {
+            // Something audible is coming through, but it has never reached a
+            // healthy level — the mic is likely misconfigured or too quiet.
+            // True silence is handled by the silent path on its own delay.
             newStatus = .low
         } else {
             newStatus = .ok
