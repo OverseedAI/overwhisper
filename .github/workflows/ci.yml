@@ -7,6 +7,19 @@ on:
     branches: [main]
 
 jobs:
+  site-analytics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify landing page keeps its analytics
+        run: |
+          grep -q '<script src="analytics.js"></script>' docs/index.html \
+            || { echo '::error file=docs/index.html::Landing page no longer loads analytics.js — a redesign dropped the PostHog hook (this killed analytics once before, see eb7f6ca).'; exit 1; }
+          grep -q "posthog.init('phc_" docs/analytics.js \
+            || { echo '::error file=docs/analytics.js::analytics.js no longer initializes PostHog.'; exit 1; }
+
   build:
     runs-on: macos-14
 
