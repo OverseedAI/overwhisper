@@ -19,6 +19,8 @@ jobs:
             || { echo '::error file=docs/index.html::Landing page no longer loads analytics.js — a redesign dropped the PostHog hook (this killed analytics once before, see eb7f6ca).'; exit 1; }
           grep -q "posthog.init('phc_" docs/analytics.js \
             || { echo '::error file=docs/analytics.js::analytics.js no longer initializes PostHog.'; exit 1; }
+          grep -q "api_host: 'https://s.overseed.ai'" docs/analytics.js \
+            || { echo '::error file=docs/analytics.js::PostHog must use the first-party analytics proxy.'; exit 1; }
 
   build:
     runs-on: macos-14
