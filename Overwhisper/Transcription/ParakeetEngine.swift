@@ -128,9 +128,11 @@ extension ParakeetEngine {
         do {
             _ = try await AsrModels.download(version: version)
             appState.parakeetDownloadedModels.insert(modelType.rawValue)
+            UsageAnalytics.trackModelDownload(engine: .parakeet, model: modelType.rawValue, succeeded: true)
             AppLogger.transcription.info("Downloaded Parakeet model: \(modelType.rawValue)")
         } catch {
             appState.lastError = "Failed to download \(modelType.displayName): \(error.localizedDescription)"
+            UsageAnalytics.trackModelDownload(engine: .parakeet, model: modelType.rawValue, succeeded: false)
             AppLogger.transcription.error("Failed to download Parakeet model \(modelType.rawValue): \(error.localizedDescription)")
         }
     }

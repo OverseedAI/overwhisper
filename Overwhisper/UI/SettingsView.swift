@@ -97,6 +97,16 @@ struct GeneralSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            Section {
+                Toggle("Share anonymous usage analytics", isOn: $appState.analyticsEnabled)
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text("Sends app usage, basic app/device/OS information, model choices, and dictation outcomes through Overseed's PostHog proxy. Never sends audio, transcribed text, API keys, filenames, other app names, or raw errors.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section("Advanced") {
                 Button("Reset All Settings to Defaults") {
                     showResetConfirmation = true

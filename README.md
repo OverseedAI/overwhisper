@@ -126,7 +126,12 @@ Overwhisper is local-first.
 - Recent debug sessions are stored locally under Application Support so you can
   inspect audio, retry failures, and troubleshoot issues. The app keeps a capped
   set of recent sessions and includes a Clear All control in Settings.
-- Overwhisper does not include analytics or tracking.
+- Anonymous usage analytics are optional and off until you choose to share them.
+  When enabled, Overwhisper sends app lifecycle events, basic app/device/OS
+  information, model choices, and bucketed dictation outcomes to PostHog through
+  Overseed's first-party proxy. An allowlist strips all other event fields. It never
+  sends audio, transcribed text, API keys, filenames, other app names, or raw errors.
+  You can change this choice at any time in Settings.
 
 ## Building From Source
 

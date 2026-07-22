@@ -1,4 +1,5 @@
 .build/
+.xcodebuild/
 .swiftpm-cache/
 .models/
 .swiftpm/

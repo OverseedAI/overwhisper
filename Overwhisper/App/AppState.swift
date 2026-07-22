@@ -338,6 +338,9 @@ class AppState: ObservableObject {
     @Published var hasCompletedOnboarding: Bool {
         didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
     }
+    @Published var analyticsEnabled: Bool {
+        didSet { UserDefaults.standard.set(analyticsEnabled, forKey: Self.analyticsEnabledKey) }
+    }
     @Published var toggleHotkeyConfig: HotkeyConfig {
         didSet {
             if let data = try? JSONEncoder().encode(toggleHotkeyConfig) {
@@ -387,6 +390,7 @@ class AppState: ObservableObject {
     private var recordingTimer: Timer?
     private let maxTranscriptionHistory = 50
     private let transcriptionHistoryKey = "transcriptionHistory"
+    private static let analyticsEnabledKey = "analyticsEnabled"
 
     // Live mic input monitoring, evaluated on a 2s rolling mean level so
     // one-tick transients (keyboard clacks, door slams) can't mask a mic
@@ -455,6 +459,7 @@ class AppState: ObservableObject {
         self.recordingDurationLimitSeconds = storedLimit > 0 ? storedLimit : 60
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        self.analyticsEnabled = UserDefaults.standard.object(forKey: Self.analyticsEnabledKey) as? Bool ?? false
 
         // Load toggle hotkey (with migration from legacy hotkeyConfig)
         if let hotkeyData = UserDefaults.standard.data(forKey: "toggleHotkeyConfig"),
@@ -609,8 +614,17 @@ class AppState: ObservableObject {
         recordingDurationLimitEnabled = false
         recordingDurationLimitSeconds = 60
         startAtLogin = false
+        analyticsEnabled = false
         toggleHotkeyConfig = .defaultToggle
         pushToTalkHotkeyConfig = .defaultPushToTalk
+    }
+
+    var hasChosenAnalyticsPreference: Bool {
+        UserDefaults.standard.object(forKey: Self.analyticsEnabledKey) != nil
+    }
+
+    func confirmAnalyticsPreference() {
+        UserDefaults.standard.set(analyticsEnabled, forKey: Self.analyticsEnabledKey)
     }
 
     private func persistTranscriptionHistory() {

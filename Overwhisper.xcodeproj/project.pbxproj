@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0CA517744B5FACFB24A85D3F /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = 2768D4B895FEA5E45D28AFD1 /* PostHog */; };
 		2D6A6332D3D90900C616BBF3 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F70BDECC4296C7ABE1FDA0 /* HotkeyManager.swift */; };
 		326B25FB71F5A0B5D2D92C6F /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E48F8B713B09791DAA3D85 /* AppLogger.swift */; };
 		3884CE56321B5124FB9ADBA5 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B981A16BEA9D881C03169846 /* OnboardingView.swift */; };
@@ -17,12 +18,13 @@
 		70FA1EA74756D7D320D285E1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = FCE79557B30B53B7AB17AE32 /* Sparkle */; };
 		7D180EF2BEA910E301CCFF11 /* OverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F33FBAA55580AA9161076B3F /* OverlayView.swift */; };
 		8A57D64071EE9382870A168A /* HotKey in Frameworks */ = {isa = PBXBuildFile; productRef = 9A4FF0B4B24B9C3208107118 /* HotKey */; };
+		9AEBC4844C98AB6EB8D188C1 /* UsageAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9443C3E7E246048C964481B9 /* UsageAnalytics.swift */; };
 		9BB4A5EF51B9DF3D4F27565E /* DebugSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ADFC9097F990B8F1921F2B8 /* DebugSession.swift */; };
 		A29C2673D8311037884AC6DD /* OverwhisperApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2AB0D6F62E0EBA98666314F /* OverwhisperApp.swift */; };
 		A5CC058DCB44FF020BCAA97B /* OverlayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84D3ACF14A29AD5B7BF37B1 /* OverlayWindow.swift */; };
 		AA5001D76C50DA98C10D640F /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27FA5B6D32A74360C3778DFC /* TranscriptionEngine.swift */; };
-		B86603C770C16FF8B3A37462 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 18206C0CCC86F03F6ACDB919 /* FluidAudio */; };
 		B73CD4C608E49C7EF1D8E304 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 761523080B992A3D3E66DE0D /* WhisperKit */; };
+		B86603C770C16FF8B3A37462 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 18206C0CCC86F03F6ACDB919 /* FluidAudio */; };
 		C1D778331DBD91B16B89EE54 /* WhisperKitEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F51FC25B877C421AA6475AC /* WhisperKitEngine.swift */; };
 		CD6A803C535173D80F3D6A95 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B6842920F60C2FDB7C2A90 /* SettingsView.swift */; };
 		D75547085B767313847F6087 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B86856C6E8DC1C1CA79D95 /* AppDelegate.swift */; };
@@ -46,6 +48,7 @@
 		785617F77BB6DE5884349534 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		82812CE441C897C9A14857B0 /* Overwhisper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Overwhisper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8AC1285E3693B5BA33093458 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		9443C3E7E246048C964481B9 /* UsageAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageAnalytics.swift; sourceTree = "<group>"; };
 		A6FFAA3DB712946DA571F3B8 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		AA0EF1327337992F9B5CA01B /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		B0E48F8B713B09791DAA3D85 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
@@ -68,6 +71,7 @@
 				8A57D64071EE9382870A168A /* HotKey in Frameworks */,
 				70FA1EA74756D7D320D285E1 /* Sparkle in Frameworks */,
 				B86603C770C16FF8B3A37462 /* FluidAudio in Frameworks */,
+				0CA517744B5FACFB24A85D3F /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +81,7 @@
 		1C8DF36529376EDC28173A5B /* Overwhisper */ = {
 			isa = PBXGroup;
 			children = (
+				F55C6C83972953CEB0B7F916 /* Analytics */,
 				6C16798A265046D7C1CBE4C2 /* App */,
 				666B404F3B61FC08DF9A9926 /* Audio */,
 				4159F7B8F187D387FCD37D9E /* Hotkey */,
@@ -182,6 +187,14 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		F55C6C83972953CEB0B7F916 /* Analytics */ = {
+			isa = PBXGroup;
+			children = (
+				9443C3E7E246048C964481B9 /* UsageAnalytics.swift */,
+			);
+			path = Analytics;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -203,6 +216,7 @@
 				9A4FF0B4B24B9C3208107118 /* HotKey */,
 				FCE79557B30B53B7AB17AE32 /* Sparkle */,
 				18206C0CCC86F03F6ACDB919 /* FluidAudio */,
+				2768D4B895FEA5E45D28AFD1 /* PostHog */,
 			);
 			productName = Overwhisper;
 			productReference = 82812CE441C897C9A14857B0 /* Overwhisper.app */;
@@ -234,6 +248,7 @@
 			packageReferences = (
 				9A1EB69531E3CAD3C80658F7 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 				681EAAEEFA2C695A3644ED8D /* XCRemoteSwiftPackageReference "HotKey" */,
+				7AC963A5E517E8B1FF91277C /* XCRemoteSwiftPackageReference "posthog-ios" */,
 				A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				8EC2D1C4B288D69480479AFB /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
@@ -282,6 +297,7 @@
 				CD6A803C535173D80F3D6A95 /* SettingsView.swift in Sources */,
 				3C20ABADE932477FE5057996 /* TextInserter.swift in Sources */,
 				AA5001D76C50DA98C10D640F /* TranscriptionEngine.swift in Sources */,
+				9AEBC4844C98AB6EB8D188C1 /* UsageAnalytics.swift in Sources */,
 				C1D778331DBD91B16B89EE54 /* WhisperKitEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -477,6 +493,14 @@
 				minimumVersion = 0.2.0;
 			};
 		};
+		7AC963A5E517E8B1FF91277C /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios.git";
+			requirement = {
+				kind = exactVersion;
+				version = 3.64.6;
+			};
+		};
 		8EC2D1C4B288D69480479AFB /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/argmaxinc/WhisperKit.git";
@@ -508,6 +532,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 9A1EB69531E3CAD3C80658F7 /* XCRemoteSwiftPackageReference "FluidAudio" */;
 			productName = FluidAudio;
+		};
+		2768D4B895FEA5E45D28AFD1 /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7AC963A5E517E8B1FF91277C /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
 		};
 		761523080B992A3D3E66DE0D /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;

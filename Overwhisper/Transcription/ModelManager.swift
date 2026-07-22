@@ -200,6 +200,7 @@ class ModelManager: ObservableObject {
             appState.isDownloadingModel = false
             appState.currentlyDownloadingModel = nil
             appState.modelDownloadProgress = 1.0
+            UsageAnalytics.trackModelDownload(engine: .whisperKit, model: modelName, succeeded: true)
 
         } catch {
             appState.isDownloadingModel = false
@@ -209,6 +210,7 @@ class ModelManager: ObservableObject {
             } else {
                 appState.lastError = "Failed to download model: \(error.localizedDescription)"
             }
+            UsageAnalytics.trackModelDownload(engine: .whisperKit, model: modelName, succeeded: false)
             throw error
         }
     }

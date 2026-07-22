@@ -33,6 +33,9 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
     from: "0.12.4"
+  PostHog:
+    url: https://github.com/PostHog/posthog-ios.git
+    exactVersion: "3.64.6"
 
 targets:
   Overwhisper:
@@ -60,10 +63,7 @@ targets:
       - package: HotKey
       - package: Sparkle
       - package: FluidAudio
-    info:
-      path: Overwhisper/Info.plist
-    entitlements:
-      path: Overwhisper/Overwhisper.entitlements
+      - package: PostHog
 
 schemes:
   Overwhisper:

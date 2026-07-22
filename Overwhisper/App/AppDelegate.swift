@@ -72,6 +72,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Install crash reporter first
         CrashReporter.shared.install()
 
+        UsageAnalytics.start(enabled: appState.analyticsEnabled)
+
         // Hide dock icon - menu bar only
         NSApp.setActivationPolicy(.accessory)
 
@@ -82,8 +84,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupEscapeKeyMonitor()
 
         showOnboardingIfNeeded()
+        promptForAnalyticsConsentIfNeeded()
 
         launchEngineInitialization()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        UsageAnalytics.flush()
     }
 
     private func launchEngineInitialization() {
@@ -294,6 +301,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
                 self?.updateErrorMenuItem(message)
+            }
+            .store(in: &cancellables)
+
+        appState.$analyticsEnabled
+            .dropFirst()
+            .sink { enabled in
+                UsageAnalytics.setEnabled(enabled)
             }
             .store(in: &cancellables)
 
@@ -613,7 +627,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         .environmentObject(appState)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 460),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -630,11 +644,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func completeOnboarding() {
+        appState.confirmAnalyticsPreference()
         appState.hasCompletedOnboarding = true
+        UsageAnalytics.trackOnboardingCompleted()
         onboardingWindow?.close()
         onboardingWindow = nil
         requestMicrophonePermission()
         requestAccessibilityPermission()
+    }
+
+    private func promptForAnalyticsConsentIfNeeded() {
+        guard appState.hasCompletedOnboarding, !appState.hasChosenAnalyticsPreference else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Help improve Overwhisper?"
+        alert.informativeText = "Share anonymous app usage, basic app/device/OS information, model choices, and dictation outcomes. Audio, transcribed text, API keys, filenames, other app names, and raw errors are never sent. You can change this in Settings."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Share Anonymous Analytics")
+        alert.addButton(withTitle: "Not Now")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            appState.analyticsEnabled = true
+        } else {
+            appState.confirmAnalyticsPreference()
+        }
     }
 
     private func showPermissionAlert(for permission: String) {
@@ -893,6 +926,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         errorMessage: String(format: "No speech detected (mean %.1f dBFS, peak %.1f dBFS)", meanDb, peakDb),
                         usedCloudFallback: false
                     )
+                    UsageAnalytics.trackDictation(
+                        outcome: .silent,
+                        engine: appState.transcriptionEngine.analyticsEngine,
+                        model: appState.analyticsModel,
+                        recordingDuration: recordingDuration,
+                        latency: latency,
+                        usedCloudFallback: false
+                    )
 
                     appState.recordingState = .idle
                     overlayWindow.hide()
@@ -914,6 +955,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     latency: latency,
                     language: language,
                     errorMessage: error.localizedDescription,
+                    usedCloudFallback: false
+                )
+                UsageAnalytics.trackDictation(
+                    outcome: .recordingError,
+                    engine: appState.transcriptionEngine.analyticsEngine,
+                    model: appState.analyticsModel,
+                    recordingDuration: recordingDuration,
+                    latency: latency,
                     usedCloudFallback: false
                 )
                 appState.recordingState = .error(error.localizedDescription)
@@ -945,6 +994,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Expects recordingState == .transcribing and the overlay already showing.
     private func transcribeAndDeliver(audioURL: URL, recordingDuration: TimeInterval) async {
         let engineType = appState.transcriptionEngine
+        let analyticsEngine = engineType.analyticsEngine
+        let analyticsModel = appState.analyticsModel
         let (engineLabel, modelLabel) = currentEngineLabels()
         let language = appState.language
         let started = Date()
@@ -959,7 +1010,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if Task.isCancelled {
             recordCancelledTranscription(
                 audioURL: audioURL, engine: engineLabel, model: modelLabel,
-                recordingDuration: recordingDuration, latency: Date().timeIntervalSince(started), language: language
+                recordingDuration: recordingDuration, latency: Date().timeIntervalSince(started), language: language,
+                analyticsEngine: analyticsEngine, analyticsModel: analyticsModel
             )
             return
         }
@@ -978,7 +1030,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if Task.isCancelled {
                 recordCancelledTranscription(
                     audioURL: audioURL, engine: engineLabel, model: modelLabel,
-                    recordingDuration: recordingDuration, latency: latency, language: language
+                    recordingDuration: recordingDuration, latency: latency, language: language,
+                    analyticsEngine: analyticsEngine, analyticsModel: analyticsModel
                 )
                 return
             }
@@ -998,7 +1051,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 usedCloudFallback: false
             )
 
-            deliverTranscription(finalText)
+            let delivery = deliverTranscription(finalText)
+            UsageAnalytics.trackDictation(
+                outcome: finalText.isEmpty ? .empty : .success,
+                engine: analyticsEngine,
+                model: analyticsModel,
+                recordingDuration: recordingDuration,
+                latency: latency,
+                usedCloudFallback: false,
+                delivery: delivery
+            )
 
             appState.recordingState = .idle
             overlayWindow.hide()
@@ -1009,7 +1071,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if Task.isCancelled || error is CancellationError {
                 recordCancelledTranscription(
                     audioURL: audioURL, engine: engineLabel, model: modelLabel,
-                    recordingDuration: recordingDuration, latency: latency, language: language
+                    recordingDuration: recordingDuration, latency: latency, language: language,
+                    analyticsEngine: analyticsEngine, analyticsModel: analyticsModel
                 )
                 return
             }
@@ -1048,6 +1111,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     usedCloudFallback: false
                 )
                 rememberFailedSession(session)
+                UsageAnalytics.trackDictation(
+                    outcome: .transcriptionError,
+                    engine: analyticsEngine,
+                    model: analyticsModel,
+                    recordingDuration: recordingDuration,
+                    latency: latency,
+                    usedCloudFallback: false
+                )
                 appState.recordingState = .error(error.localizedDescription)
                 appState.lastError = error.localizedDescription
                 if appState.showNotificationOnError {
@@ -1059,8 +1130,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func deliverTranscription(_ text: String) {
-        guard !text.isEmpty else { return }
+    private func deliverTranscription(_ text: String) -> AnalyticsDelivery {
+        guard !text.isEmpty else { return .none }
 
         appState.addTranscriptionHistory(text)
         let didPaste = textInserter.insertText(text)
@@ -1069,12 +1140,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if appState.playSoundOnCompletion {
                 NSSound(named: .init("Tink"))?.play()
             }
+            return .pasted
         } else {
             // Accessibility permission not granted - text is in clipboard
             showNotification(
                 title: "Text Copied",
                 body: "Accessibility permission needed for auto-paste. Text copied to clipboard - press Cmd+V to paste."
             )
+            return .clipboard
         }
     }
 
@@ -1084,7 +1157,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         model: String,
         recordingDuration: TimeInterval,
         latency: TimeInterval,
-        language: String
+        language: String,
+        analyticsEngine: AnalyticsEngine,
+        analyticsModel: String
     ) {
         let session = finalizeAudioFile(
             url: audioURL,
@@ -1098,6 +1173,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             usedCloudFallback: false
         )
         rememberFailedSession(session)
+        UsageAnalytics.trackDictation(
+            outcome: .cancelled,
+            engine: analyticsEngine,
+            model: analyticsModel,
+            recordingDuration: recordingDuration,
+            latency: latency,
+            usedCloudFallback: false
+        )
     }
 
     // MARK: - Retry last failed transcription
@@ -1163,7 +1246,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 usedCloudFallback: true
             )
 
-            deliverTranscription(finalText)
+            let delivery = deliverTranscription(finalText)
+            UsageAnalytics.trackDictation(
+                outcome: finalText.isEmpty ? .empty : .success,
+                engine: .openAI,
+                model: "whisper-1",
+                recordingDuration: recordingDuration,
+                latency: latency,
+                usedCloudFallback: true,
+                delivery: delivery
+            )
 
             appState.recordingState = .idle
             return true
@@ -1184,6 +1276,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 usedCloudFallback: true
             )
             rememberFailedSession(session)
+            UsageAnalytics.trackDictation(
+                outcome: .fallbackError,
+                engine: .openAI,
+                model: "whisper-1",
+                recordingDuration: recordingDuration,
+                latency: latency,
+                usedCloudFallback: true
+            )
 
             return false
         }
@@ -1217,6 +1317,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func cancelRecording() {
         guard appState.recordingState == .recording else { return }
 
+        let recordingDuration = appState.recordingDuration
+
         stopRecordingLimitTimer()
 
         // Restore system audio if we muted it for this recording
@@ -1224,6 +1326,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         appState.stopRecordingTimer()
         audioRecorder.cancelRecording()
+        UsageAnalytics.trackDictation(
+            outcome: .cancelled,
+            engine: appState.transcriptionEngine.analyticsEngine,
+            model: appState.analyticsModel,
+            recordingDuration: recordingDuration,
+            latency: 0,
+            usedCloudFallback: false
+        )
         appState.recordingState = .idle
         overlayWindow.hide()
     }

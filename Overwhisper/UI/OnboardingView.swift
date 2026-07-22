@@ -47,7 +47,7 @@ struct OnboardingView: View {
             }
         }
         .padding(24)
-        .frame(width: 520, height: 420)
+        .frame(width: 520, height: 460)
         .onAppear {
             refreshPermissions()
         }
@@ -118,6 +118,11 @@ struct OnboardingView: View {
                 .pickerStyle(.radioGroup)
 
                 Divider().padding(.vertical, 8)
+
+                Toggle("Share anonymous usage analytics", isOn: $appState.analyticsEnabled)
+                Text("Sends app usage, basic app/device/OS information, model choices, and dictation outcomes through Overseed's PostHog proxy. Never sends audio, transcribed text, API keys, filenames, other app names, or raw errors.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
                 Text("You can fine-tune models, hotkeys, and output behavior in Settings.")
                     .foregroundColor(.secondary)
