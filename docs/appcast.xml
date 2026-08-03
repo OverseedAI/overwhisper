@@ -6,6 +6,19 @@
     <description>Most recent updates to Overwhisper</description>
     <language>en</language>
     <item>
+      <title>Version 1.9.2</title>
+      <pubDate>Mon, 03 Aug 2026 20:31:30 +0000</pubDate>
+      <sparkle:version>46</sparkle:version>
+      <sparkle:shortVersionString>1.9.2</sparkle:shortVersionString>
+      <description><![CDATA[<h2>Version 1.9.2</h2><ul><li>System audio now mutes within about a third of a second of starting a recording. The mute no longer waits for the microphone to spin up, and the start chime holds it off for at most 0.3s.</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/OverseedAI/overwhisper/releases/download/v1.9.2/Overwhisper-1.9.2.dmg"
+        length="7426573"
+        type="application/octet-stream"
+        sparkle:edSignature="YRxDyPGJxNI/AMyGiecrlpf4bWNHK7PGC8tgJBhitABP23nMHbdyY04QzM7jtMw4LCabRVcIjRXI2A5PLKzdDA=="
+      />
+    </item>
+    <item>
       <title>Version 1.9.1</title>
       <pubDate>Mon, 03 Aug 2026 19:49:36 +0000</pubDate>
       <sparkle:version>45</sparkle:version>
