@@ -3,6 +3,10 @@
 Notes here are shown in the in-app update dialog. Each release is a `##` heading
 matching the version number, followed by a bullet list of user-facing changes.
 
+## 1.9.1
+
+- System audio now mutes almost immediately when recording starts. It previously kept playing for about two seconds while waiting for the start chime's decay tail to finish.
+
 ## 1.7.1
 
 - Fixed recording failing when your microphone and speakers are different devices (e.g. an audio interface for input and Bluetooth headphones for output).
