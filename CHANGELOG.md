@@ -3,6 +3,10 @@
 Notes here are shown in the in-app update dialog. Each release is a `##` heading
 matching the version number, followed by a bullet list of user-facing changes.
 
+## 1.9.2
+
+- System audio now mutes within about a third of a second of starting a recording. The mute no longer waits for the microphone to spin up, and the start chime holds it off for at most 0.3s.
+
 ## 1.9.1
 
 - System audio now mutes almost immediately when recording starts. It previously kept playing for about two seconds while waiting for the start chime's decay tail to finish.
