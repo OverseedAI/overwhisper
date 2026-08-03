@@ -733,11 +733,18 @@ import ServiceManagement
 enum SystemAudioManager {
     /// Longest we let the start chime hold off the mute. Chime files carry a
     /// long decay tail (Glass.aiff reports 1.65s), and while we wait, system
-    /// audio the user asked to silence keeps playing into the recording.
-    static let maxChimeMuteDelay: TimeInterval = 0.5
+    /// audio the user asked to silence keeps playing into the recording. The
+    /// chime's attack lands well inside this window; only ring-out is cut.
+    static let maxChimeMuteDelay: TimeInterval = 0.3
 
     static func muteDelay(afterChimeOf duration: TimeInterval) -> TimeInterval {
         min(max(duration, 0), maxChimeMuteDelay)
+    }
+
+    /// The first NSAppleScript execution in a process pays ~150ms of one-time
+    /// component loading; run a harmless query up front so a real mute doesn't.
+    static func prewarm() {
+        _ = getSystemVolume()
     }
 
     private static var wasSystemMuted = false

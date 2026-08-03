@@ -87,6 +87,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         promptForAnalyticsConsentIfNeeded()
 
         launchEngineInitialization()
+
+        // Warm up the AppleScript machinery so the first mute-on-record
+        // doesn't pay its ~150ms one-time setup cost.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            SystemAudioManager.prewarm()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -820,15 +826,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 chimeDuration = chime?.duration ?? 0.5
             }
 
-            try audioRecorder.startRecording()
-            appState.recordingState = .recording
-            appState.startRecordingTimer()
-            startRecordingLimitTimer()
-            overlayWindow.show(position: appState.overlayPosition)
-
-            // Delay the mute just long enough for the chime's attack to be
-            // heard, capped so the file's decay tail doesn't keep system audio
-            // playing into the recording.
+            // Mute (or start the mute clock) before engine startup so device
+            // spin-up time doesn't add to how long system audio keeps playing.
+            // With a chime, the delay is just long enough for its attack to be
+            // heard, capped so the file's decay tail doesn't hold off the mute.
             let muteDelay = SystemAudioManager.muteDelay(afterChimeOf: chimeDuration)
             if muteDelay > 0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + muteDelay) { [weak self] in
@@ -838,6 +839,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 muteSystemAudioForRecording()
             }
+
+            try audioRecorder.startRecording()
+            appState.recordingState = .recording
+            appState.startRecordingTimer()
+            startRecordingLimitTimer()
+            overlayWindow.show(position: appState.overlayPosition)
         } catch {
             audioRecorder.resetAudioEngine()
 
