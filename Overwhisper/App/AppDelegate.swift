@@ -826,11 +826,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             startRecordingLimitTimer()
             overlayWindow.show(position: appState.overlayPosition)
 
-            // Mute after the chime finishes so muting the system output doesn't
-            // cut it off. The mic's own startup latency means nothing meaningful
-            // is captured during this brief window anyway.
-            if chimeDuration > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + chimeDuration) { [weak self] in
+            // Delay the mute just long enough for the chime's attack to be
+            // heard, capped so the file's decay tail doesn't keep system audio
+            // playing into the recording.
+            let muteDelay = SystemAudioManager.muteDelay(afterChimeOf: chimeDuration)
+            if muteDelay > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + muteDelay) { [weak self] in
                     guard let self, self.appState.recordingState == .recording else { return }
                     self.muteSystemAudioForRecording()
                 }

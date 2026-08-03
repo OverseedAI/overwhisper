@@ -731,6 +731,15 @@ import ServiceManagement
 // Note: This only works with built-in audio or audio devices that support macOS volume controls.
 // External audio interfaces (like Focusrite Scarlett) may not support mute/volume control.
 enum SystemAudioManager {
+    /// Longest we let the start chime hold off the mute. Chime files carry a
+    /// long decay tail (Glass.aiff reports 1.65s), and while we wait, system
+    /// audio the user asked to silence keeps playing into the recording.
+    static let maxChimeMuteDelay: TimeInterval = 0.5
+
+    static func muteDelay(afterChimeOf duration: TimeInterval) -> TimeInterval {
+        min(max(duration, 0), maxChimeMuteDelay)
+    }
+
     private static var wasSystemMuted = false
     private static var previousVolume: Int = 0
     private static var usedVolumeFallback = false
