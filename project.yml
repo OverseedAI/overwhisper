@@ -21,9 +21,9 @@ settings:
       ENABLE_HARDENED_RUNTIME: YES
 
 packages:
-  WhisperKit:
-    url: https://github.com/argmaxinc/WhisperKit.git
-    from: "0.9.0"
+  argmax-oss-swift:
+    url: https://github.com/argmaxinc/argmax-oss-swift.git
+    from: "1.1.0"
   HotKey:
     url: https://github.com/soffes/HotKey.git
     from: "0.2.0"
@@ -59,7 +59,8 @@ targets:
         Release:
           CODE_SIGN_IDENTITY: "Apple Development"
     dependencies:
-      - package: WhisperKit
+      - package: argmax-oss-swift
+        product: WhisperKit
       - package: HotKey
       - package: Sparkle
       - package: FluidAudio

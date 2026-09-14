@@ -77,7 +77,7 @@ class ModelManager: ObservableObject {
 
         downloadedModels = foundModels
         appState.downloadedModels = foundModels
-        appState.isModelDownloaded = foundModels.contains(appState.whisperModel.rawValue)
+        appState.isModelDownloaded = foundModels.contains(appState.whisperModel.variantName)
     }
 
     private func scanDirectory(_ path: URL, foundModels: inout Set<String>) {
@@ -88,12 +88,8 @@ class ModelManager: ObservableObject {
         for url in contents where url.hasDirectoryPath {
             let name = url.lastPathComponent
 
-            // Match patterns like "openai_whisper-small.en" or "openai_whisper-large-v3-v20240930"
-            if name.starts(with: "openai_whisper-") {
-                let rawName = String(name.dropFirst("openai_whisper-".count))
-                // Extract base model name (remove version suffix like "-v20240930")
-                let modelName = extractBaseModelName(rawName)
-                foundModels.insert(modelName)
+            if Self.isModelVariantFolder(name) {
+                foundModels.insert(name)
             }
             // Check for huggingface hub cache format
             else if name.contains("whisperkit-coreml") {
@@ -104,58 +100,35 @@ class ModelManager: ObservableObject {
                         if let modelDirs = try? FileManager.default.contentsOfDirectory(at: snapshot, includingPropertiesForKeys: nil) {
                             for modelDir in modelDirs where modelDir.hasDirectoryPath {
                                 let dirName = modelDir.lastPathComponent
-                                if dirName.starts(with: "openai_whisper-") {
-                                    let rawName = String(dirName.dropFirst("openai_whisper-".count))
-                                    foundModels.insert(extractBaseModelName(rawName))
+                                if Self.isModelVariantFolder(dirName) {
+                                    foundModels.insert(dirName)
                                 }
                             }
                         }
                     }
                 }
             }
-            // Direct model name match
-            else if WhisperModel.allCases.contains(where: { $0.rawValue == name }) {
-                foundModels.insert(name)
-            }
         }
     }
 
-    private func extractBaseModelName(_ rawName: String) -> String {
-        // Handle versioned names like "large-v3-v20240930" -> "large-v3" or "large-v3_turbo"
-        // and simple names like "small.en" -> "small.en"
+    /// Model folders are published as full variant names, e.g. `openai_whisper-small.en`,
+    /// `openai_whisper-large-v3-v20240930_626MB` or `distil-whisper_distil-large-v3_turbo`.
+    ///
+    /// Previously these were collapsed to a coarse base name, which made every quantized and
+    /// turbo build indistinguishable from its parent (`large-v3_947MB` was reported as
+    /// `large-v3`). The full name is now preserved so each variant is tracked independently.
+    nonisolated static func isModelVariantFolder(_ name: String) -> Bool {
+        name.hasPrefix("openai_whisper-") || name.hasPrefix("distil-whisper_")
+    }
 
-        // Check if it matches our known model names directly
-        for model in WhisperModel.allCases {
-            if rawName == model.rawValue || rawName.hasPrefix(model.rawValue + "-v") {
-                return model.rawValue
-            }
-        }
-
-        // Try to match base name patterns (order matters - more specific first)
-        let patterns = [
-            ("large-v3_turbo", "large-v3_turbo"),
-            ("large-v3-turbo", "large-v3_turbo"),
-            ("large-v3", "large-v3"),
-            ("large-v2_turbo", "large-v2"),
-            ("large-v2-turbo", "large-v2"),
-            ("large-v2", "large-v2"),
-            ("medium.en", "medium.en"),
-            ("medium", "medium"),
-            ("small.en", "small.en"),
-            ("small", "small"),
-            ("base.en", "base.en"),
-            ("base", "base"),
-            ("tiny.en", "tiny.en"),
-            ("tiny", "tiny")
-        ]
-
-        for (pattern, result) in patterns {
-            if rawName.hasPrefix(pattern) {
-                return result
-            }
-        }
-
-        return rawName
+    /// Exact-match a download folder against a model id.
+    ///
+    /// Matching must be exact rather than prefix-based: `openai_whisper-large-v3`,
+    /// `openai_whisper-large-v3_947MB` and `openai_whisper-large-v3-v20240930` are three
+    /// separate downloads, and a prefix match would delete or claim all three when the user
+    /// asked about one. Legacy short ids ("large-v3") are accepted by canonicalizing first.
+    nonisolated static func folderName(_ folderName: String, matches modelName: String) -> Bool {
+        folderName == WhisperModel(rawValue: modelName).variantName
     }
 
     func getModelPath(for modelName: String) async throws -> String? {
@@ -169,19 +142,24 @@ class ModelManager: ObservableObject {
     }
 
     func downloadModel(_ modelName: String) async throws {
+        // Always request the fully-qualified variant. WhisperKit globs the repo for the variant
+        // string, so a bare name like "large-v3" matches several folders (`large-v3`,
+        // `large-v3_947MB`, `large-v3-v20240930`, ...) and the download becomes ambiguous.
+        let variant = WhisperModel(rawValue: modelName).variantName
+
         appState.isDownloadingModel = true
-        appState.currentlyDownloadingModel = modelName
+        appState.currentlyDownloadingModel = variant
         appState.modelDownloadProgress = 0
 
         do {
             // Use WhisperKit's built-in download functionality
             let modelFolder = try await WhisperKit.download(
-                variant: modelName,
+                variant: variant,
                 downloadBase: devDownloadBase,
                 progressCallback: { progress in
                     Task { @MainActor in
                         self.appState.modelDownloadProgress = progress.fractionCompleted
-                        self.downloadProgress[modelName] = progress.fractionCompleted
+                        self.downloadProgress[variant] = progress.fractionCompleted
                     }
                 }
             )
@@ -194,13 +172,13 @@ class ModelManager: ObservableObject {
             }
 
             // Model downloaded successfully
-            downloadedModels.insert(modelName)
-            appState.downloadedModels.insert(modelName)
-            appState.isModelDownloaded = downloadedModels.contains(appState.whisperModel.rawValue)
+            downloadedModels.insert(variant)
+            appState.downloadedModels.insert(variant)
+            appState.isModelDownloaded = downloadedModels.contains(appState.whisperModel.variantName)
             appState.isDownloadingModel = false
             appState.currentlyDownloadingModel = nil
             appState.modelDownloadProgress = 1.0
-            UsageAnalytics.trackModelDownload(engine: .whisperKit, model: modelName, succeeded: true)
+            UsageAnalytics.trackModelDownload(engine: .whisperKit, model: variant, succeeded: true)
 
         } catch {
             appState.isDownloadingModel = false
@@ -210,7 +188,7 @@ class ModelManager: ObservableObject {
             } else {
                 appState.lastError = "Failed to download model: \(error.localizedDescription)"
             }
-            UsageAnalytics.trackModelDownload(engine: .whisperKit, model: modelName, succeeded: false)
+            UsageAnalytics.trackModelDownload(engine: .whisperKit, model: variant, succeeded: false)
             throw error
         }
     }
@@ -245,10 +223,7 @@ class ModelManager: ObservableObject {
 
             for url in contents where url.hasDirectoryPath {
                 let name = url.lastPathComponent
-                // Match "openai_whisper-{modelName}" or "openai_whisper-{modelName}-v{version}"
-                if name == "openai_whisper-\(modelName)" ||
-                   name.hasPrefix("openai_whisper-\(modelName)-v") ||
-                   name == modelName {
+                if Self.folderName(name, matches: modelName) {
                     try fileManager.removeItem(at: url)
                     deleted = true
                     AppLogger.transcription.info("Deleted model at: \(url.path)")
@@ -263,8 +238,7 @@ class ModelManager: ObservableObject {
                 if let modelDirs = try? fileManager.contentsOfDirectory(at: snapshot, includingPropertiesForKeys: nil) {
                     for modelDir in modelDirs where modelDir.hasDirectoryPath {
                         let name = modelDir.lastPathComponent
-                        if name == "openai_whisper-\(modelName)" ||
-                           name.hasPrefix("openai_whisper-\(modelName)-v") {
+                        if Self.folderName(name, matches: modelName) {
                             try fileManager.removeItem(at: modelDir)
                             deleted = true
                             AppLogger.transcription.info("Deleted model at: \(modelDir.path)")
@@ -275,10 +249,11 @@ class ModelManager: ObservableObject {
         }
 
         if deleted {
-            downloadedModels.remove(modelName)
-            appState.downloadedModels.remove(modelName)
+            let variant = WhisperModel(rawValue: modelName).variantName
+            downloadedModels.remove(variant)
+            appState.downloadedModels.remove(variant)
 
-            if modelName == appState.whisperModel.rawValue {
+            if variant == appState.whisperModel.variantName {
                 appState.isModelDownloaded = false
             }
         } else {
@@ -287,7 +262,7 @@ class ModelManager: ObservableObject {
     }
 
     func isModelDownloaded(_ modelName: String) -> Bool {
-        return downloadedModels.contains(modelName)
+        return downloadedModels.contains(WhisperModel(rawValue: modelName).variantName)
     }
 
     /// Returns the on-disk folder path for a cached model, or nil if not found.
@@ -310,13 +285,7 @@ class ModelManager: ObservableObject {
         for basePath in possiblePaths {
             guard let contents = try? FileManager.default.contentsOfDirectory(at: basePath, includingPropertiesForKeys: nil) else { continue }
             for url in contents where url.hasDirectoryPath {
-                let name = url.lastPathComponent
-                if name.starts(with: "openai_whisper-") {
-                    let rawName = String(name.dropFirst("openai_whisper-".count))
-                    if extractBaseModelName(rawName) == modelName {
-                        return url.path
-                    }
-                } else if name == modelName {
+                if Self.folderName(url.lastPathComponent, matches: modelName) {
                     return url.path
                 }
             }
@@ -331,12 +300,8 @@ class ModelManager: ObservableObject {
                     for snapshot in snapshots where snapshot.hasDirectoryPath {
                         if let modelDirs = try? FileManager.default.contentsOfDirectory(at: snapshot, includingPropertiesForKeys: nil) {
                             for modelDir in modelDirs where modelDir.hasDirectoryPath {
-                                let dirName = modelDir.lastPathComponent
-                                if dirName.starts(with: "openai_whisper-") {
-                                    let rawName = String(dirName.dropFirst("openai_whisper-".count))
-                                    if extractBaseModelName(rawName) == modelName {
-                                        return modelDir.path
-                                    }
+                                if Self.folderName(modelDir.lastPathComponent, matches: modelName) {
+                                    return modelDir.path
                                 }
                             }
                         }
@@ -349,7 +314,7 @@ class ModelManager: ObservableObject {
     }
 
     func availableModels() -> [WhisperModel] {
-        return WhisperModel.allCases
+        return WhisperModelCatalog.shared.models
     }
 
     private func validateModelChecksum(at modelFolder: URL) throws {

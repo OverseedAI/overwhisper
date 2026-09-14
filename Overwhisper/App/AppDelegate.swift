@@ -794,7 +794,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Check if model is available when using WhisperKit
         if appState.transcriptionEngine == .whisperKit {
-            let currentModel = appState.whisperModel.rawValue
+            let currentModel = appState.whisperModel.variantName
             if !appState.downloadedModels.contains(currentModel) && !appState.isDownloadingModel {
                 showNoModelAlert()
                 return

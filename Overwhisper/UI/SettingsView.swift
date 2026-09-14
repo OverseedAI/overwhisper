@@ -181,6 +181,33 @@ struct GeneralSettingsView: View {
 struct TranscriptionSettingsView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var modelManager: ModelManager
+    @ObservedObject private var catalog = WhisperModelCatalog.shared
+
+    /// The selected model is always listed, even if this device's support tier omits it, so a
+    /// previously chosen model never silently vanishes from the UI.
+    /// Adds any model the user actually has — selected or already downloaded — that the catalog
+    /// doesn't list, so nothing the user owns can become invisible (and therefore undeletable).
+    private func withLocalModels(_ models: [WhisperModel], englishOnly: Bool) -> [WhisperModel] {
+        var extras: [WhisperModel] = []
+
+        let selected = appState.whisperModel
+        if selected.isEnglishOnly == englishOnly, !models.contains(selected) {
+            extras.append(selected)
+        }
+
+        // A model can be on disk but absent from every support tier (e.g. medium.en, which no
+        // Mac tier lists). Without this it would be unreachable in the UI, so the user could
+        // neither select nor delete it — it would just silently occupy disk space.
+        for name in appState.downloadedModels {
+            let downloaded = WhisperModel(rawValue: name)
+            guard downloaded.isEnglishOnly == englishOnly else { continue }
+            guard !models.contains(downloaded), !extras.contains(downloaded) else { continue }
+            extras.append(downloaded)
+        }
+
+        guard !extras.isEmpty else { return models }
+        return whisperModelsSorted(models + extras)
+    }
 
     private var isUsingOpenAI: Bool {
         appState.transcriptionEngine == .openAI
@@ -194,20 +221,6 @@ struct TranscriptionSettingsView: View {
         appState.transcriptionEngine == .whisperKit
     }
 
-    private let whisperLanguages = [
-        ("auto", "Auto-detect"),
-        ("en", "English"),
-        ("es", "Spanish"),
-        ("fr", "French"),
-        ("de", "German"),
-        ("it", "Italian"),
-        ("pt", "Portuguese"),
-        ("ko", "Korean"),
-        ("ja", "Japanese"),
-        ("zh", "Chinese"),
-        ("ru", "Russian"),
-        ("ar", "Arabic")
-    ]
 
     // Parakeet v3 transcribes 25 European languages (auto-detected). The
     // language selection is passed as a script hint where applicable; codes
@@ -248,7 +261,7 @@ struct TranscriptionSettingsView: View {
 
     // The language options offered for the active engine/model selection.
     private var availableLanguages: [(String, String)] {
-        guard isUsingParakeet else { return whisperLanguages }
+        guard isUsingParakeet else { return WhisperLanguages.all }
         return appState.parakeetModel == .v2English ? parakeetV2Languages : parakeetV3Languages
     }
 
@@ -285,13 +298,15 @@ struct TranscriptionSettingsView: View {
             // 2. Model (right under engine)
             if isUsingWhisper {
                 Section {
-                    ForEach(WhisperModel.englishModels) { model in
+                    ForEach(withLocalModels(catalog.englishModels, englishOnly: true)) { model in
                         ModelRowView(
                             model: model,
-                            isDownloaded: appState.downloadedModels.contains(model.rawValue),
+                            isDownloaded: appState.downloadedModels.contains(model.variantName),
                             isSelected: appState.whisperModel == model,
-                            isDownloading: appState.currentlyDownloadingModel == model.rawValue,
+                            isDownloading: appState.currentlyDownloadingModel == model.variantName,
                             downloadProgress: appState.modelDownloadProgress,
+                            isRecommended: catalog.recommended == model,
+                            isUntested: catalog.isUntested(model),
                             modelManager: modelManager
                         )
                         .environmentObject(appState)
@@ -299,29 +314,42 @@ struct TranscriptionSettingsView: View {
                 } header: {
                     Text("English Models")
                 } footer: {
-                    Text("Optimized for English speech.")
+                    Text("Optimized for English speech. Distil models are faster with near-equal accuracy.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
 
                 Section {
-                    ForEach(WhisperModel.multilingualModels) { model in
+                    ForEach(withLocalModels(catalog.multilingualModels, englishOnly: false)) { model in
                         ModelRowView(
                             model: model,
-                            isDownloaded: appState.downloadedModels.contains(model.rawValue),
+                            isDownloaded: appState.downloadedModels.contains(model.variantName),
                             isSelected: appState.whisperModel == model,
-                            isDownloading: appState.currentlyDownloadingModel == model.rawValue,
+                            isDownloading: appState.currentlyDownloadingModel == model.variantName,
                             downloadProgress: appState.modelDownloadProgress,
+                            isRecommended: catalog.recommended == model,
+                            isUntested: catalog.isUntested(model),
                             modelManager: modelManager
                         )
                         .environmentObject(appState)
                     }
                 } header: {
-                    Text("Multilingual Models")
+                    HStack {
+                        Text("Multilingual Models")
+                        if catalog.isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
                 } footer: {
-                    Text("Supports 99+ languages including Korean, Japanese, Chinese, and more.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Supports 99+ languages including Korean, Japanese, Chinese, and more.")
+                        Text(catalog.didLoadRemoteCatalog
+                             ? "Showing all \(catalog.models.count) variants Argmax publishes for this Mac."
+                             : "Showing the bundled model list — couldn't reach Argmax's catalog.")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 }
             }
 
@@ -431,6 +459,12 @@ struct TranscriptionSettingsView: View {
             }
         }
         .listStyle(.inset)
+        .task {
+            // Refresh once per Settings appearance so newly published variants show up without
+            // requiring an app update. Falls back to the bundled list when offline.
+            await catalog.refresh()
+            modelManager.scanForModels()
+        }
     }
 }
 
@@ -442,6 +476,9 @@ struct ModelRowView: View {
     let isSelected: Bool
     let isDownloading: Bool
     let downloadProgress: Double
+    var isRecommended: Bool = false
+    /// Argmax doesn't list this variant for this Mac. Still selectable — this is a hint, not a block.
+    var isUntested: Bool = false
     let modelManager: ModelManager
 
     var body: some View {
@@ -461,6 +498,27 @@ struct ModelRowView: View {
                             Image(systemName: "checkmark.seal.fill")
                                 .foregroundColor(.green)
                                 .font(.caption)
+                        }
+
+                        if isRecommended {
+                            Text("Recommended")
+                                .font(.caption2)
+                                .foregroundColor(.accentColor)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.12))
+                                .cornerRadius(4)
+                        }
+
+                        if isUntested {
+                            Text("Not validated for this Mac")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.12))
+                                .cornerRadius(4)
+                                .help("Argmax lists this variant for other Apple Silicon generations. You can still use it; it may be slower or fall back to CPU.")
                         }
                     }
 
@@ -512,7 +570,7 @@ struct ModelRowView: View {
             } else {
                 Button(action: {
                     Task {
-                        try? await modelManager.downloadModel(model.rawValue)
+                        try? await modelManager.downloadModel(model.variantName)
                     }
                 }) {
                     Label("Download", systemImage: "arrow.down.circle")
@@ -527,7 +585,7 @@ struct ModelRowView: View {
         .alert("Delete Model", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
-                try? modelManager.deleteModel(model.rawValue)
+                try? modelManager.deleteModel(model.variantName)
             }
         } message: {
             Text("Are you sure you want to delete \(model.displayName)? You'll need to download it again to use it.")
@@ -1099,4 +1157,67 @@ struct DebugDetailsGrid: View {
     return SettingsView(modelManager: ModelManager(appState: appState))
         .environmentObject(appState)
         .environmentObject(AudioDeviceManager())
+}
+
+/// The languages offered when transcribing with WhisperKit.
+///
+/// Whisper's multilingual models cover 99 languages, but this picker previously listed 11 of
+/// them. Speakers of some of the world's most-spoken languages — Hindi, Bengali, Urdu — could
+/// only reach their language through Auto-detect, with no way to pin it when detection misfired
+/// on short or noisy dictation, which is exactly when pinning matters most.
+///
+/// Ordered: Auto-detect, English, then roughly by number of speakers.
+enum WhisperLanguages {
+    static let all: [(String, String)] = [
+        ("auto", "Auto-detect"),
+        ("en", "English"),
+        ("zh", "Chinese"),
+        ("hi", "Hindi"),
+        ("es", "Spanish"),
+        ("ar", "Arabic"),
+        ("bn", "Bengali"),
+        ("pt", "Portuguese"),
+        ("ru", "Russian"),
+        ("ur", "Urdu"),
+        ("id", "Indonesian"),
+        ("de", "German"),
+        ("ja", "Japanese"),
+        ("mr", "Marathi"),
+        ("te", "Telugu"),
+        ("tr", "Turkish"),
+        ("ta", "Tamil"),
+        ("vi", "Vietnamese"),
+        ("ko", "Korean"),
+        ("fr", "French"),
+        ("it", "Italian"),
+        ("th", "Thai"),
+        ("gu", "Gujarati"),
+        ("pl", "Polish"),
+        ("uk", "Ukrainian"),
+        ("fa", "Persian"),
+        ("ml", "Malayalam"),
+        ("kn", "Kannada"),
+        ("nl", "Dutch"),
+        ("sv", "Swedish"),
+        ("he", "Hebrew"),
+        ("el", "Greek"),
+        ("cs", "Czech"),
+        ("ro", "Romanian"),
+        ("hu", "Hungarian"),
+        ("da", "Danish"),
+        ("fi", "Finnish"),
+        ("no", "Norwegian"),
+        ("ms", "Malay"),
+        ("tl", "Tagalog"),
+        ("sw", "Swahili"),
+        ("ne", "Nepali"),
+        ("si", "Sinhala"),
+        ("pa", "Punjabi"),
+        ("my", "Burmese"),
+        ("km", "Khmer"),
+        ("az", "Azerbaijani"),
+        ("kk", "Kazakh"),
+        ("hy", "Armenian"),
+        ("ka", "Georgian")
+    ]
 }

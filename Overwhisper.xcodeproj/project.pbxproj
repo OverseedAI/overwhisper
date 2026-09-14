@@ -30,6 +30,7 @@
 		CD6A803C535173D80F3D6A95 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B6842920F60C2FDB7C2A90 /* SettingsView.swift */; };
 		D75547085B767313847F6087 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B86856C6E8DC1C1CA79D95 /* AppDelegate.swift */; };
 		D905EC6BF91103042589D754 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6FFAA3DB712946DA571F3B8 /* MenuBarIcon.swift */; };
+		EF9D46D879B96A4DB8595AD3 /* WhisperModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7321BC30CFD88E5A2BFD6114 /* WhisperModelCatalog.swift */; };
 		F1C779843DB0F9688645B2AB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC1285E3693B5BA33093458 /* AppState.swift */; };
 		F283BF9CA8504FC7868F12F4 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57BF6ECF1ED279820E71105 /* CrashReporter.swift */; };
 		F3ECD59AC8E30F99135B602A /* OpenAIEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D26A49BA97420C7B9784D5 /* OpenAIEngine.swift */; };
@@ -45,6 +46,7 @@
 		3F51FC25B877C421AA6475AC /* WhisperKitEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitEngine.swift; sourceTree = "<group>"; };
 		5AACBA6521305AC62E4D5F08 /* TextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInserter.swift; sourceTree = "<group>"; };
 		605F07BD195AAE4FEA3C5F44 /* DebugAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugAudioPlayer.swift; sourceTree = "<group>"; };
+		7321BC30CFD88E5A2BFD6114 /* WhisperModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelCatalog.swift; sourceTree = "<group>"; };
 		756F6B9208C887A594813A6B /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
 		785617F77BB6DE5884349534 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7F2158C9251C1F2168EEDCC6 /* SystemAudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioManager.swift; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 				B793ED0D22A05339538F0BA7 /* ParakeetEngine.swift */,
 				27FA5B6D32A74360C3778DFC /* TranscriptionEngine.swift */,
 				3F51FC25B877C421AA6475AC /* WhisperKitEngine.swift */,
+				7321BC30CFD88E5A2BFD6114 /* WhisperModelCatalog.swift */,
 			);
 			path = Transcription;
 			sourceTree = "<group>";
@@ -253,7 +256,7 @@
 				681EAAEEFA2C695A3644ED8D /* XCRemoteSwiftPackageReference "HotKey" */,
 				7AC963A5E517E8B1FF91277C /* XCRemoteSwiftPackageReference "posthog-ios" */,
 				A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				8EC2D1C4B288D69480479AFB /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A9655F50E434AEEB255A265D /* Products */;
@@ -303,6 +306,7 @@
 				AA5001D76C50DA98C10D640F /* TranscriptionEngine.swift in Sources */,
 				9AEBC4844C98AB6EB8D188C1 /* UsageAnalytics.swift in Sources */,
 				C1D778331DBD91B16B89EE54 /* WhisperKitEngine.swift in Sources */,
+				EF9D46D879B96A4DB8595AD3 /* WhisperModelCatalog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -489,6 +493,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.0;
+			};
+		};
 		681EAAEEFA2C695A3644ED8D /* XCRemoteSwiftPackageReference "HotKey" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/soffes/HotKey.git";
@@ -503,14 +515,6 @@
 			requirement = {
 				kind = exactVersion;
 				version = 3.64.6;
-			};
-		};
-		8EC2D1C4B288D69480479AFB /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/argmaxinc/WhisperKit.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.9.0;
 			};
 		};
 		9A1EB69531E3CAD3C80658F7 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
@@ -544,7 +548,7 @@
 		};
 		761523080B992A3D3E66DE0D /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 8EC2D1C4B288D69480479AFB /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			package = 2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
 			productName = WhisperKit;
 		};
 		9A4FF0B4B24B9C3208107118 /* HotKey */ = {

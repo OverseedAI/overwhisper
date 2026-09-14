@@ -105,61 +105,8 @@ enum ParakeetModelType: String, CaseIterable, Identifiable {
     }
 }
 
-enum WhisperModel: String, CaseIterable, Identifiable {
-    // English-only models (faster, more accurate for English)
-    case tinyEn = "tiny.en"
-    case baseEn = "base.en"
-    case smallEn = "small.en"
-    case mediumEn = "medium.en"
-    // Multilingual models (supports 99+ languages including Korean, Japanese, Chinese, etc.)
-    case tiny = "tiny"
-    case base = "base"
-    case small = "small"
-    case medium = "medium"
-    case largeV2 = "large-v2"
-    case largeV3 = "large-v3"
-    case largeV3Turbo = "large-v3_turbo"
-
-    var id: String { rawValue }
-
-    var isEnglishOnly: Bool {
-        switch self {
-        case .tinyEn, .baseEn, .smallEn, .mediumEn: return true
-        case .tiny, .base, .small, .medium, .largeV2, .largeV3, .largeV3Turbo: return false
-        }
-    }
-
-    var displayName: String {
-        switch self {
-        case .tinyEn, .tiny: return "Tiny"
-        case .baseEn, .base: return "Base"
-        case .smallEn, .small: return "Small"
-        case .mediumEn, .medium: return "Medium"
-        case .largeV2: return "Large v2"
-        case .largeV3: return "Large v3"
-        case .largeV3Turbo: return "Large v3 Turbo"
-        }
-    }
-
-    var size: String {
-        switch self {
-        case .tinyEn, .tiny: return "~75 MB"
-        case .baseEn, .base: return "~150 MB"
-        case .smallEn, .small: return "~500 MB"
-        case .mediumEn, .medium: return "~1.5 GB"
-        case .largeV2, .largeV3: return "~3 GB"
-        case .largeV3Turbo: return "~1.6 GB"
-        }
-    }
-
-    static var englishModels: [WhisperModel] {
-        [.tinyEn, .baseEn, .smallEn, .mediumEn]
-    }
-
-    static var multilingualModels: [WhisperModel] {
-        [.tiny, .base, .small, .medium, .largeV2, .largeV3, .largeV3Turbo]
-    }
-}
+// `WhisperModel` now lives in Transcription/WhisperModelCatalog.swift, where it is backed by
+// the full set of variants Argmax publishes rather than a hand-maintained enum.
 
 struct HotkeyConfig: Codable, Equatable {
     var keyCode: UInt32
@@ -427,7 +374,12 @@ class AppState: ObservableObject {
         self.transcriptionEngine = TranscriptionEngineType(rawValue: engineStr) ?? .whisperKit
 
         let modelStr = UserDefaults.standard.string(forKey: "whisperModel") ?? WhisperModel.smallEn.rawValue
-        self.whisperModel = WhisperModel(rawValue: modelStr) ?? .smallEn
+        // Any previously stored id stays valid: legacy short names ("small.en") and full variant
+        // names ("distil-whisper_distil-large-v3") both round-trip through WhisperModel.
+        // A malformed id falls back to the default rather than persisting a model that can never
+        // initialize — otherwise the app stays wedged until the user finds Reset in Settings.
+        let storedModel = WhisperModel(rawValue: modelStr)
+        self.whisperModel = storedModel.isPlausibleVariant ? storedModel : .smallEn
 
         let parakeetModelStr = UserDefaults.standard.string(forKey: "parakeetModel") ?? ParakeetModelType.v3Multilingual.rawValue
         self.parakeetModel = ParakeetModelType(rawValue: parakeetModelStr) ?? .v3Multilingual

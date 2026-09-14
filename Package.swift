@@ -10,7 +10,7 @@ let package = Package(
         .executable(name: "Overwhisper", targets: ["Overwhisper"])
     ],
     dependencies: [
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
+        .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.1.0"),
         .package(url: "https://github.com/soffes/HotKey.git", from: "0.2.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.5.0"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.12.4"),
@@ -20,7 +20,7 @@ let package = Package(
         .executableTarget(
             name: "Overwhisper",
             dependencies: [
-                "WhisperKit",
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
                 "HotKey",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
