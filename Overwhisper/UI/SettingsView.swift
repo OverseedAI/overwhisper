@@ -24,7 +24,7 @@ struct SettingsView: View {
                 }
                 .environmentObject(appState)
 
-            HistorySettingsView()
+            HistorySettingsView(store: appState.debugSessionStore)
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
@@ -691,6 +691,7 @@ struct RecordingSettingsView: View {
 
 struct HistorySettingsView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject var store: DebugSessionStore
     @StateObject private var player = DebugAudioPlayer()
     @State private var expandedSessionID: UUID?
 
@@ -708,35 +709,68 @@ struct HistorySettingsView: View {
     }()
 
     private var sessions: [TranscriptionDebugSession] {
-        appState.debugSessionStore.sessions
+        store.sessions
+    }
+
+    private var summaryText: String {
+        let count = "\(sessions.count) recent transcription\(sessions.count == 1 ? "" : "s")"
+        guard store.totalAudioBytes > 0 else { return count }
+        let size = ByteCountFormatter.string(fromByteCount: store.totalAudioBytes, countStyle: .file)
+        return "\(count) · \(size) on disk"
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if !sessions.isEmpty {
-                HStack(spacing: 8) {
-                    Text("\(sessions.count) recent transcription\(sessions.count == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
+            HStack(spacing: 8) {
+                Text(summaryText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if !sessions.isEmpty {
                     Button("Show in Finder") {
                         NSWorkspace.shared.selectFile(
-                            nil, inFileViewerRootedAtPath: appState.debugSessionStore.rootDirectory.path)
+                            nil, inFileViewerRootedAtPath: store.rootDirectory.path)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     Button("Clear All") {
                         player.stop()
-                        appState.debugSessionStore.clear()
+                        store.clear()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-
-                Divider()
             }
+            .padding(.horizontal)
+            .padding(.top, 8)
+
+            HStack(spacing: 16) {
+                Picker("Keep at most", selection: $appState.audioRetentionMaxCount) {
+                    ForEach(AudioRetentionCount.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+
+                Picker("Delete older than", selection: $appState.audioRetentionAge) {
+                    ForEach(AudioRetentionAge.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+
+                Spacer()
+            }
+            .font(.caption)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .help("Recordings outside these limits are deleted automatically, along with their audio.")
+
+            Divider()
 
             if sessions.isEmpty {
                 VStack(spacing: 12) {
@@ -761,7 +795,7 @@ struct HistorySettingsView: View {
                                 session: session,
                                 isExpanded: expandedSessionID == session.id,
                                 player: player,
-                                store: appState.debugSessionStore,
+                                store: store,
                                 dateFormatter: dateFormatter,
                                 dayFormatter: dayFormatter,
                                 onToggle: {
@@ -777,6 +811,12 @@ struct HistorySettingsView: View {
                     }
                 }
             }
+        }
+        // Retention pruning can delete the file that is currently playing.
+        .onReceive(store.$sessions) { sessions in
+            guard let current = player.currentURL else { return }
+            let stillPresent = sessions.contains { store.audioURL(for: $0) == current }
+            if !stillPresent { player.stop() }
         }
         // Switching to another settings tab tears the view down normally…
         .onDisappear { player.stop() }

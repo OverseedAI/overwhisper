@@ -412,6 +412,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        // No dropFirst on purpose: the initial emission applies the stored policy
+        // at launch, so recordings that aged out while the app was closed are pruned.
+        Publishers.CombineLatest(appState.$audioRetentionMaxCount, appState.$audioRetentionAge)
+            .sink { [weak self] count, age in
+                self?.appState.debugSessionStore.retentionPolicy = AudioRetentionPolicy(
+                    maxCount: count.limit,
+                    maxAge: age.maxAge
+                )
+            }
+            .store(in: &cancellables)
+
         // Update UI when engine initialization state changes
         appState.$isInitializingEngine
             .receive(on: DispatchQueue.main)

@@ -329,6 +329,12 @@ class AppState: ObservableObject {
     @Published var recordingDurationLimitSeconds: Int {
         didSet { UserDefaults.standard.set(recordingDurationLimitSeconds, forKey: "recordingDurationLimitSeconds") }
     }
+    @Published var audioRetentionAge: AudioRetentionAge {
+        didSet { UserDefaults.standard.set(audioRetentionAge.rawValue, forKey: "audioRetentionAge") }
+    }
+    @Published var audioRetentionMaxCount: AudioRetentionCount {
+        didSet { UserDefaults.standard.set(audioRetentionMaxCount.rawValue, forKey: "audioRetentionMaxCount") }
+    }
     @Published var startAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(startAtLogin, forKey: "startAtLogin")
@@ -457,6 +463,11 @@ class AppState: ObservableObject {
         self.recordingDurationLimitEnabled = UserDefaults.standard.bool(forKey: "recordingDurationLimitEnabled")
         let storedLimit = UserDefaults.standard.integer(forKey: "recordingDurationLimitSeconds")
         self.recordingDurationLimitSeconds = storedLimit > 0 ? storedLimit : 60
+        self.audioRetentionAge = AudioRetentionAge(rawValue: UserDefaults.standard.string(forKey: "audioRetentionAge") ?? "") ?? .never
+        // `object(forKey:)` rather than `integer(forKey:)`: a missing key must fall back to
+        // the historical cap of 30, not to 0 (which is the "unlimited" raw value).
+        self.audioRetentionMaxCount = (UserDefaults.standard.object(forKey: "audioRetentionMaxCount") as? Int)
+            .flatMap(AudioRetentionCount.init(rawValue:)) ?? .thirty
         self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         self.analyticsEnabled = UserDefaults.standard.object(forKey: Self.analyticsEnabledKey) as? Bool ?? false
@@ -613,6 +624,8 @@ class AppState: ObservableObject {
         selectedInputDeviceUID = ""
         recordingDurationLimitEnabled = false
         recordingDurationLimitSeconds = 60
+        audioRetentionAge = .never
+        audioRetentionMaxCount = .thirty
         startAtLogin = false
         analyticsEnabled = false
         toggleHotkeyConfig = .defaultToggle
