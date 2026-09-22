@@ -19,21 +19,100 @@ struct TranscriptionDebugSession: Codable, Identifiable, Equatable {
   var success: Bool { errorMessage == nil }
 }
 
+// MARK: - Retention policy
+
+/// How long a recording (audio + metadata) is kept before it is deleted.
+enum AudioRetentionAge: String, CaseIterable, Identifiable {
+  case oneDay = "1d"
+  case sevenDays = "7d"
+  case thirtyDays = "30d"
+  case ninetyDays = "90d"
+  case never = "never"
+
+  var id: String { rawValue }
+
+  var label: String {
+    switch self {
+    case .oneDay: return "1 day"
+    case .sevenDays: return "7 days"
+    case .thirtyDays: return "30 days"
+    case .ninetyDays: return "90 days"
+    case .never: return "Never"
+    }
+  }
+
+  /// Maximum age in seconds, or `nil` to keep recordings forever.
+  var maxAge: TimeInterval? {
+    switch self {
+    case .oneDay: return 1 * 86_400
+    case .sevenDays: return 7 * 86_400
+    case .thirtyDays: return 30 * 86_400
+    case .ninetyDays: return 90 * 86_400
+    case .never: return nil
+    }
+  }
+}
+
+/// Upper bound on how many recordings are kept, newest first.
+enum AudioRetentionCount: Int, CaseIterable, Identifiable {
+  case ten = 10
+  case thirty = 30
+  case fifty = 50
+  case hundred = 100
+  case unlimited = 0
+
+  var id: Int { rawValue }
+
+  var label: String {
+    switch self {
+    case .unlimited: return "Unlimited"
+    default: return "\(rawValue) recordings"
+    }
+  }
+
+  /// Maximum number of recordings, or `nil` for no limit.
+  var limit: Int? { self == .unlimited ? nil : rawValue }
+}
+
+struct AudioRetentionPolicy: Equatable {
+  /// Keep at most this many recordings (newest first). `nil` means unlimited.
+  var maxCount: Int?
+  /// Delete recordings older than this many seconds. `nil` means keep forever.
+  var maxAge: TimeInterval?
+
+  /// Matches the historical behaviour: newest 30 recordings, no age limit.
+  static let `default` = AudioRetentionPolicy(maxCount: 30, maxAge: nil)
+}
+
 @MainActor
 final class DebugSessionStore: ObservableObject {
   @Published private(set) var sessions: [TranscriptionDebugSession] = []
 
-  private let maxSessions = 30
+  /// Total size of every file in the audio directory, including orphans that
+  /// are no longer referenced by `sessions`.
+  @Published private(set) var totalAudioBytes: Int64 = 0
+
+  /// Assigning a policy prunes immediately (a no-op when nothing falls outside it).
+  var retentionPolicy: AudioRetentionPolicy = .default {
+    didSet { applyRetention() }
+  }
+
   private let metadataFileName = "sessions.json"
   private let audioDirectoryName = "audio"
 
-  init() {
+  let rootDirectory: URL
+
+  /// - Parameter rootDirectory: Where `sessions.json` and the `audio/` folder
+  ///   live. Defaults to Application Support; tests pass a temporary directory.
+  init(rootDirectory: URL? = nil) {
+    self.rootDirectory = rootDirectory ?? Self.defaultRootDirectory()
     load()
+    refreshDiskUsage()
   }
 
   // MARK: - Paths
 
-  var rootDirectory: URL {
+  private static func defaultRootDirectory() -> URL {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
       .first!
     let bundleId = Bundle.main.bundleIdentifier ?? "com.overseed.overwhisper"
@@ -111,8 +190,9 @@ final class DebugSessionStore: ObservableObject {
     )
 
     sessions.insert(session, at: 0)
-    trim()
+    prune(now: Date())
     persist()
+    refreshDiskUsage()
     return session
   }
 
@@ -121,6 +201,7 @@ final class DebugSessionStore: ObservableObject {
     guard let idx = sessions.firstIndex(where: { $0.id == session.id }) else { return }
     sessions[idx] = session
     persist()
+    refreshDiskUsage()
   }
 
   func clear() {
@@ -131,6 +212,7 @@ final class DebugSessionStore: ObservableObject {
     }
     sessions = []
     persist()
+    refreshDiskUsage()
   }
 
   func delete(_ session: TranscriptionDebugSession) {
@@ -139,6 +221,61 @@ final class DebugSessionStore: ObservableObject {
     }
     sessions.removeAll { $0.id == session.id }
     persist()
+    refreshDiskUsage()
+  }
+
+  // MARK: - Retention
+
+  /// Deletes sessions (metadata and audio) that fall outside `retentionPolicy`:
+  /// first anything older than `maxAge`, then anything beyond `maxCount`.
+  /// Runs at launch, whenever the policy changes, and after each new recording.
+  func applyRetention(now: Date = Date()) {
+    guard prune(now: now) else { return }
+    persist()
+    refreshDiskUsage()
+  }
+
+  /// Applies the policy in memory and removes the audio of dropped sessions.
+  /// Returns `true` if anything was removed. Caller is responsible for persisting.
+  @discardableResult
+  private func prune(now: Date) -> Bool {
+    var kept = sessions
+    if let maxAge = retentionPolicy.maxAge {
+      let cutoff = now.addingTimeInterval(-maxAge)
+      kept = kept.filter { $0.timestamp >= cutoff }
+    }
+    if let maxCount = retentionPolicy.maxCount, kept.count > maxCount {
+      kept = Array(kept.prefix(maxCount))
+    }
+    guard kept.count != sessions.count else { return false }
+
+    let keptIDs = Set(kept.map(\.id))
+    for session in sessions where !keptIDs.contains(session.id) {
+      if let url = audioURL(for: session) {
+        try? FileManager.default.removeItem(at: url)
+      }
+    }
+    sessions = kept
+    return true
+  }
+
+  private func refreshDiskUsage() {
+    let keys: Set<URLResourceKey> = [.fileSizeKey, .isRegularFileKey]
+    guard let urls = try? FileManager.default.contentsOfDirectory(
+      at: audioDirectory, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles])
+    else {
+      totalAudioBytes = 0
+      return
+    }
+    var total: Int64 = 0
+    for url in urls {
+      guard let values = try? url.resourceValues(forKeys: keys),
+        values.isRegularFile == true,
+        let size = values.fileSize
+      else { continue }
+      total += Int64(size)
+    }
+    totalAudioBytes = total
   }
 
   // MARK: - Persistence
@@ -162,17 +299,6 @@ final class DebugSessionStore: ObservableObject {
     } catch {
       AppLogger.app.error("DebugSessionStore: failed to persist: \(error.localizedDescription)")
     }
-  }
-
-  private func trim() {
-    guard sessions.count > maxSessions else { return }
-    let toRemove = sessions.suffix(sessions.count - maxSessions)
-    for session in toRemove {
-      if let url = audioURL(for: session) {
-        try? FileManager.default.removeItem(at: url)
-      }
-    }
-    sessions = Array(sessions.prefix(maxSessions))
   }
 
   private func ensureDirectories() {
