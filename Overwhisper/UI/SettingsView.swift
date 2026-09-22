@@ -848,6 +848,7 @@ struct PositionCell: View {
 }
 
 struct DebugSessionRow: View {
+    @EnvironmentObject var appState: AppState
     let session: TranscriptionDebugSession
     let isExpanded: Bool
     @ObservedObject var player: DebugAudioPlayer
@@ -857,6 +858,7 @@ struct DebugSessionRow: View {
     let onToggle: () -> Void
 
     private var statusColor: Color { session.success ? .green : .red }
+    private var isRetrying: Bool { appState.retryingSessionID == session.id }
 
     private var audioURL: URL? { store.audioURL(for: session) }
 
@@ -979,6 +981,23 @@ struct DebugSessionRow: View {
 
                     HStack {
                         Spacer()
+                        if audioURL != nil {
+                            if isRetrying {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Transcribing…")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Button(session.success ? "Transcribe Again" : "Retry") {
+                                    appState.retrySessionRequests.send(session)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(!appState.recordingState.isIdle)
+                                .help("Transcribe this recording again with the current engine. The result is copied to the clipboard, not pasted.")
+                            }
+                        }
                         if !session.transcribedText.isEmpty {
                             Button("Copy Result") {
                                 let pb = NSPasteboard.general
@@ -996,6 +1015,7 @@ struct DebugSessionRow: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(isRetrying)
                     }
                 }
                 .padding(.horizontal, 12)

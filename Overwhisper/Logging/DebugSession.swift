@@ -19,6 +19,36 @@ struct TranscriptionDebugSession: Codable, Identifiable, Equatable {
   var success: Bool { errorMessage == nil }
 }
 
+extension TranscriptionDebugSession {
+  /// The same session with a new transcription result. Identity, timestamp,
+  /// audio file metadata and recording duration are preserved.
+  func withResult(
+    engine: String,
+    model: String,
+    transcribedText: String,
+    latencySeconds: Double,
+    language: String?,
+    errorMessage: String?,
+    usedCloudFallback: Bool
+  ) -> TranscriptionDebugSession {
+    TranscriptionDebugSession(
+      id: id,
+      timestamp: timestamp,
+      engine: engine,
+      model: model,
+      audioFileName: audioFileName,
+      audioFileSizeBytes: audioFileSizeBytes,
+      audioDurationSeconds: audioDurationSeconds,
+      recordingDurationSeconds: recordingDurationSeconds,
+      transcribedText: transcribedText,
+      latencySeconds: latencySeconds,
+      language: language,
+      errorMessage: errorMessage,
+      usedCloudFallback: usedCloudFallback
+    )
+  }
+}
+
 @MainActor
 final class DebugSessionStore: ObservableObject {
   @Published private(set) var sessions: [TranscriptionDebugSession] = []
