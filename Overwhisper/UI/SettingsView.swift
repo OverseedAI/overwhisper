@@ -742,7 +742,7 @@ struct HistorySettingsView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(store.metadataUnavailable)
+                    .disabled(store.metadataUnavailable || appState.retryingSessionID != nil)
                 }
             }
             .padding(.horizontal)
@@ -778,7 +778,7 @@ struct HistorySettingsView: View {
             .font(.caption)
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .disabled(store.metadataUnavailable)
+            .disabled(store.metadataUnavailable || appState.retryingSessionID != nil)
             .help("These limits delete saved recordings and their History entries. Recent Transcriptions text is kept separately.")
 
             if let error = store.cleanupError {
@@ -842,7 +842,7 @@ struct HistorySettingsView: View {
         .alert("Permanently delete recordings?", isPresented: $showRetentionConfirmation) {
             Button("Cancel", role: .cancel) { pendingPolicy = nil }
             Button("Delete \(pendingDeletionCount) Recordings", role: .destructive) {
-                guard let policy = pendingPolicy else { return }
+                guard appState.retryingSessionID == nil, let policy = pendingPolicy else { return }
                 if store.deletionCount(for: policy) > pendingDeletionCount {
                     // New recordings arrived while the dialog was open. Show the
                     // updated count rather than authorize additional deletions.
@@ -858,6 +858,7 @@ struct HistorySettingsView: View {
         .alert("Clear saved recordings?", isPresented: $showClearConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete \(pendingDeletionCount) Recordings", role: .destructive) {
+                guard appState.retryingSessionID == nil else { return }
                 if store.clearableRecordingCount > pendingDeletionCount {
                     pendingDeletionCount = store.clearableRecordingCount
                     DispatchQueue.main.async { showClearConfirmation = true }
@@ -956,6 +957,7 @@ struct PositionCell: View {
 }
 
 struct DebugSessionRow: View {
+    @EnvironmentObject var appState: AppState
     let session: TranscriptionDebugSession
     let isExpanded: Bool
     @ObservedObject var player: DebugAudioPlayer
@@ -965,6 +967,7 @@ struct DebugSessionRow: View {
     let onToggle: () -> Void
 
     private var statusColor: Color { session.success ? .green : .red }
+    private var isRetrying: Bool { appState.retryingSessionID == session.id }
 
     private var audioURL: URL? { store.audioURL(for: session) }
 
@@ -1087,6 +1090,23 @@ struct DebugSessionRow: View {
 
                     HStack {
                         Spacer()
+                        if audioURL != nil {
+                            if isRetrying {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Transcribing…")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Button(session.success ? "Transcribe Again" : "Retry") {
+                                    appState.retrySessionRequests.send(session)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(!appState.recordingState.isIdle)
+                                .help("Transcribe this recording again with the current engine. The result is copied to the clipboard, not pasted.")
+                            }
+                        }
                         if !session.transcribedText.isEmpty {
                             Button("Copy Result") {
                                 let pb = NSPasteboard.general
@@ -1104,6 +1124,7 @@ struct DebugSessionRow: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(isRetrying)
                     }
                 }
                 .padding(.horizontal, 12)

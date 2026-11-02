@@ -20,6 +20,36 @@ struct TranscriptionDebugSession: Codable, Identifiable, Equatable {
   var success: Bool { errorMessage == nil }
 }
 
+extension TranscriptionDebugSession {
+  /// The same session with a new transcription result. Identity, timestamp,
+  /// audio file metadata and recording duration are preserved.
+  func withResult(
+    engine: String,
+    model: String,
+    transcribedText: String,
+    latencySeconds: Double,
+    language: String?,
+    errorMessage: String?,
+    usedCloudFallback: Bool
+  ) -> TranscriptionDebugSession {
+    TranscriptionDebugSession(
+      id: id,
+      timestamp: timestamp,
+      engine: engine,
+      model: model,
+      audioFileName: audioFileName,
+      audioFileSizeBytes: audioFileSizeBytes,
+      audioDurationSeconds: audioDurationSeconds,
+      recordingDurationSeconds: recordingDurationSeconds,
+      transcribedText: transcribedText,
+      latencySeconds: latencySeconds,
+      language: language,
+      errorMessage: errorMessage,
+      usedCloudFallback: usedCloudFallback
+    )
+  }
+}
+
 // MARK: - Retention policy
 
 /// How long a recording (audio + metadata) is kept before it is deleted.
@@ -106,7 +136,12 @@ final class DebugSessionStore: ObservableObject {
   private let removeFile: ((URL) throws -> Void)?
   private let writeMetadata: (Data, URL) throws -> Void
   private var orphanFiles: [(name: String, modified: Date)] = []
-  private var audioInUse: Set<UUID> = []
+  struct AudioLease {
+    fileprivate let id: UUID
+    fileprivate let sessionID: UUID
+    let url: URL
+  }
+  private var audioLeases: [UUID: AudioLease] = [:]
   private var metadataURL: URL { rootDirectory.appendingPathComponent("sessions.json") }
   var audioDirectory: URL { rootDirectory.appendingPathComponent("audio") }
 
@@ -203,14 +238,52 @@ final class DebugSessionStore: ObservableObject {
     return audioDirectory.appendingPathComponent(name)
   }
 
-  func acquireAudio(for session: TranscriptionDebugSession) -> URL? {
-    guard let url = audioURL(for: session) else { return nil }
-    audioInUse.insert(session.id)
-    return url
+  /// Open the stored file relative to a pinned directory, then copy from that
+  /// descriptor. Engines reopen paths, so handing them the checked source URL
+  /// would leave a check/open race. Each reader owns a private snapshot instead.
+  func acquireAudio(for session: TranscriptionDebugSession) -> AudioLease? {
+    guard sessions.contains(where: { $0.id == session.id && $0.audioFileName == session.audioFileName }),
+          let name = session.audioFileName, validAudioName(name, id: session.id),
+          let directory = try? directoryDescriptor(audioDirectory) else { return nil }
+    defer { close(directory) }
+    let descriptor = name.withCString {
+      openat(directory, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+    }
+    guard descriptor >= 0 else { return nil }
+    let source = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    defer { try? source.close() }
+    var info = stat()
+    guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+          info.st_nlink == 1 else { return nil }
+
+    let id = UUID()
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("OverwhisperRetry-\(id.uuidString)", isDirectory: true)
+    let url = temporary.appendingPathComponent("audio.wav")
+    var createdDirectory = false
+    do {
+      try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false,
+                                            attributes: [.posixPermissions: 0o700])
+      createdDirectory = true
+      guard FileManager.default.createFile(atPath: url.path, contents: nil,
+                                          attributes: [.posixPermissions: 0o600]) else { throw posixError() }
+      let output = try FileHandle(forWritingTo: url)
+      defer { try? output.close() }
+      while let data = try source.read(upToCount: 1_048_576), !data.isEmpty {
+        try output.write(contentsOf: data)
+      }
+      let lease = AudioLease(id: id, sessionID: session.id, url: url)
+      audioLeases[id] = lease
+      return lease
+    } catch {
+      if createdDirectory { try? FileManager.default.removeItem(at: temporary) }
+      return nil
+    }
   }
 
-  func releaseAudio(for session: TranscriptionDebugSession) {
-    audioInUse.remove(session.id)
+  func releaseAudio(_ lease: AudioLease) {
+    guard let owned = audioLeases.removeValue(forKey: lease.id) else { return }
+    try? FileManager.default.removeItem(at: owned.url.deletingLastPathComponent())
     retryCleanup()
   }
 
@@ -283,6 +356,18 @@ final class DebugSessionStore: ObservableObject {
     reschedule()
   }
 
+  /// An unsuccessful retry must not destroy a previously useful result.
+  @discardableResult
+  func updateRetry(_ attempt: TranscriptionDebugSession) -> TranscriptionDebugSession? {
+    guard let original = sessions.first(where: { $0.id == attempt.id }) else { return nil }
+    if original.success && !original.transcribedText.isEmpty
+      && (!attempt.success || attempt.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+      return original
+    }
+    update(attempt)
+    return attempt
+  }
+
   var clearableRecordingCount: Int { sessions.count + orphanedAudioCount }
 
   func clear() {
@@ -341,7 +426,7 @@ final class DebugSessionStore: ObservableObject {
   private func removeSessions(_ ids: Set<UUID>) {
     var removed = Set<UUID>()
     for session in sessions where ids.contains(session.id) {
-      guard !audioInUse.contains(session.id) else {
+      guard !audioLeases.values.contains(where: { $0.sessionID == session.id }) else {
         cleanupError = "A recording is in use. Cleanup will retry when transcription finishes."
         continue
       }

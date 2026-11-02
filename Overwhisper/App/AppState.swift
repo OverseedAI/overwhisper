@@ -399,6 +399,12 @@ class AppState: ObservableObject {
     private let defaults: UserDefaults
     private let updateLoginItem: (Bool) -> Void
 
+    /// One-shot requests from the History tab to re-transcribe a stored session.
+    /// Handled by AppDelegate, which owns the transcription pipeline.
+    let retrySessionRequests = PassthroughSubject<TranscriptionDebugSession, Never>()
+    /// Session currently being re-transcribed from History, if any.
+    @Published var retryingSessionID: UUID?
+
     // Hotkey recording state - tracks which recorder is active (nil if none)
     @Published var activeHotkeyRecorder: String?
 
