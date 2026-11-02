@@ -206,6 +206,16 @@ final class WhisperModelCatalogTests: XCTestCase {
 
     // MARK: - Stored preference validation
 
+    func testQuantizedEnglishVariantsKeepTheirLanguageCapability() {
+        let model = WhisperModel(rawValue: "openai_whisper-small.en_217MB")
+        XCTAssertTrue(model.isEnglishOnly)
+        XCTAssertTrue(model.displayName.contains("English"))
+        XCTAssertEqual(WhisperModelSelectionPolicy.initialLanguage(storedValue: nil, model: model), "en")
+        XCTAssertFalse(WhisperModel(rawValue: "openai_whisper-small.enough").isEnglishOnly)
+        XCTAssertFalse(WhisperModel(rawValue: "openai_whisper-small.en_other").isEnglishOnly)
+        XCTAssertFalse(WhisperModel(rawValue: "openai_whisper-small_217MB").isEnglishOnly)
+    }
+
     /// Regression: any string was accepted as a model id, so a corrupted or withdrawn value
     /// persisted forever — init fails, nothing resets it, and transcription throws
     /// `notInitialized` on every attempt.

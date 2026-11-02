@@ -61,7 +61,8 @@ struct WhisperModel: Identifiable, Hashable, Codable {
     /// distil-whisper models are English-only distillations; `.en` marks OpenAI English builds.
     var isEnglishOnly: Bool {
         let name = shortName
-        return name.hasSuffix(".en") || name.contains("distil-large")
+        return name.range(of: #"\.en(?:_[0-9]+MB)?\z"#, options: .regularExpression) != nil
+            || name.contains("distil-large")
     }
 
     var isTurbo: Bool { rawValue.contains("_turbo") }
