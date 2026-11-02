@@ -89,7 +89,7 @@ class ModelManager: ObservableObject {
             let name = url.lastPathComponent
 
             if Self.isModelVariantFolder(name) {
-                foundModels.insert(name)
+                foundModels.insert(WhisperModel(rawValue: name).variantName)
             }
             // Check for huggingface hub cache format
             else if name.contains("whisperkit-coreml") {
@@ -101,7 +101,7 @@ class ModelManager: ObservableObject {
                             for modelDir in modelDirs where modelDir.hasDirectoryPath {
                                 let dirName = modelDir.lastPathComponent
                                 if Self.isModelVariantFolder(dirName) {
-                                    foundModels.insert(dirName)
+                                    foundModels.insert(WhisperModel(rawValue: dirName).variantName)
                                 }
                             }
                         }
@@ -119,6 +119,7 @@ class ModelManager: ObservableObject {
     /// `large-v3`). The full name is now preserved so each variant is tracked independently.
     nonisolated static func isModelVariantFolder(_ name: String) -> Bool {
         name.hasPrefix("openai_whisper-") || name.hasPrefix("distil-whisper_")
+            || WhisperModel.legacyModels.contains(where: { $0.rawValue == name })
     }
 
     /// Exact-match a download folder against a model id.
@@ -128,7 +129,8 @@ class ModelManager: ObservableObject {
     /// separate downloads, and a prefix match would delete or claim all three when the user
     /// asked about one. Legacy short ids ("large-v3") are accepted by canonicalizing first.
     nonisolated static func folderName(_ folderName: String, matches modelName: String) -> Bool {
-        folderName == WhisperModel(rawValue: modelName).variantName
+        guard isModelVariantFolder(folderName) else { return false }
+        return WhisperModel(rawValue: folderName).variantName == WhisperModel(rawValue: modelName).variantName
     }
 
     func getModelPath(for modelName: String) async throws -> String? {
