@@ -39,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
     private var transcriptionTask: Task<Void, Never>?
-    private var escapeKeyMonitor: Any?
+    private var escapeKeyMonitor: EscapeKeyMonitor?
     private var errorResetTimer: Timer?
 
     // Tap-vs-hold on the toggle hotkey: tap toggles, holding past the
@@ -96,7 +96,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        escapeKeyMonitor?.stop()
         UsageAnalytics.flush()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        appState.debugSessionStore.retryCleanup()
+        // Accessibility may have been granted in System Settings after launch.
+        escapeKeyMonitor?.start()
     }
 
     private func launchEngineInitialization() {
@@ -131,7 +138,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleSystemDidWake(_ notification: Notification) {
-        // Reset the audio engine to ensure it's ready after wake
+        // Reconcile elapsed retention deadlines after sleep and clock changes.
+        appState.debugSessionStore.retryCleanup()
         audioRecorder.resetAudioEngine()
     }
 
@@ -409,6 +417,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak self] _ in
                 self?.refreshRecordingLimitTimer()
+            }
+            .store(in: &cancellables)
+
+        // Replay the saved policy atomically at launch and after confirmation.
+        appState.$audioRetentionPolicy
+            .sink { [weak self] policy in
+                self?.appState.debugSessionStore.retentionPolicy = policy
             }
             .store(in: &cancellables)
 
@@ -804,6 +819,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startRecording() {
         guard appState.recordingState.isIdle else { return }
+        escapeKeyMonitor?.start()
 
         // Recording is allowed while the engine is still loading — audio capture
         // doesn't need the model, and transcription waits for initialization.
@@ -1269,17 +1285,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard appState.recordingState.isIdle else { return }
 
         guard let session = lastFailedSession,
-              let audioURL = appState.debugSessionStore.audioURL(for: session) else {
+              let audioURL = appState.debugSessionStore.acquireAudio(for: session) else {
             clearFailedSession()
             showNotification(title: "Retry Unavailable", body: "The audio from the failed transcription is no longer available.")
             return
         }
 
         clearFailedSession()
+        escapeKeyMonitor?.start()
         appState.recordingState = .transcribing
         overlayWindow.showTranscribing()
 
         transcriptionTask = Task {
+            defer { appState.debugSessionStore.releaseAudio(for: session) }
             await transcribeAndDeliver(audioURL: audioURL, recordingDuration: session.recordingDurationSeconds)
         }
     }
@@ -1459,13 +1477,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupEscapeKeyMonitor() {
-        escapeKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // Escape key
-                Task { @MainActor in
-                    self?.cancelActiveOperation()
+        escapeKeyMonitor = EscapeKeyMonitor(
+            isActive: { [weak self] in
+                guard let self else { return false }
+                switch self.appState.recordingState {
+                case .recording, .transcribing: return true
+                case .idle, .error: return false
                 }
-            }
-        }
+            },
+            onCancel: { [weak self] in self?.cancelActiveOperation() }
+        )
+        escapeKeyMonitor?.start()
     }
 
     private func cancelActiveOperation() {
