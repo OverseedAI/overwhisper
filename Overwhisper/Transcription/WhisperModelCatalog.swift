@@ -177,11 +177,8 @@ struct WhisperModel: Identifiable, Hashable, Codable {
 
     /// The variants to offer when Argmax's remote config is unreachable.
     ///
-    /// This delegates to WhisperKit's bundled `recommendedModels()`, which resolves the support
-    /// tier for *this* device without any network access. Hard-coding the Apple Silicon list
-    /// here instead would over-offer on older hardware: the M1 tier excludes the nine `_turbo`
-    /// and `large-v3-v20240930` variants that an M4 supports, and selecting one of those on an
-    /// M1 fails at Core ML initialization.
+    /// Uses the SDK's bundled support matrix without a network request. Absence from the
+    /// supported set is advisory, not evidence that a variant works or fails on this Mac.
     static var knownRemoteModels: [WhisperModel] {
         let local = WhisperKit.recommendedModels()
         var seen = Set<String>()
@@ -201,7 +198,10 @@ struct WhisperModel: Identifiable, Hashable, Codable {
     /// published-variant prefix.
     var isPlausibleVariant: Bool {
         if Self.legacyModels.contains(where: { $0.rawValue == rawValue }) { return true }
-        return rawValue.hasPrefix("openai_whisper-") || rawValue.hasPrefix("distil-whisper_")
+        return rawValue.range(
+            of: #"\A(openai_whisper-|distil-whisper_)[A-Za-z0-9][A-Za-z0-9._-]*\z"#,
+            options: .regularExpression
+        ) != nil
     }
 
     /// Preserved for source compatibility with call sites that enumerated the old enum.
@@ -298,6 +298,7 @@ final class WhisperModelCatalog: ObservableObject {
             let support = try await loadRemoteSupport()
             guard !support.supported.isEmpty else { throw URLError(.cannotParseResponse) }
             let fetched = Self.union(supported: support.supported, disabled: support.disabled)
+                .filter(\.isPlausibleVariant)
             supportedOnThisDevice = Set(support.supported.map(WhisperModel.init(rawValue:)))
             models = whisperModelsSorted(fetched)
             recommended = WhisperModel(rawValue: support.default)

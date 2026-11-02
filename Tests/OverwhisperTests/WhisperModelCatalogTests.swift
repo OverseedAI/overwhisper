@@ -113,6 +113,8 @@ final class WhisperModelCatalogTests: XCTestCase {
         XCTAssertTrue(ModelManager.isModelVariantFolder("openai_whisper-base.en"))
         XCTAssertTrue(ModelManager.isModelVariantFolder("distil-whisper_distil-large-v3"))
         XCTAssertFalse(ModelManager.isModelVariantFolder(".cache"))
+        XCTAssertFalse(ModelManager.isModelVariantFolder("openai_whisper-"))
+        XCTAssertFalse(ModelManager.isModelVariantFolder("openai_whisper-../outside"))
         XCTAssertFalse(ModelManager.isModelVariantFolder("parakeet-tdt-0.6b-v3"))
     }
 
@@ -210,6 +212,9 @@ final class WhisperModelCatalogTests: XCTestCase {
     func testMalformedStoredIdsAreRejected() {
         XCTAssertFalse(WhisperModel(rawValue: "").isPlausibleVariant)
         XCTAssertFalse(WhisperModel(rawValue: "not-a-model").isPlausibleVariant)
+        for invalid in ["openai_whisper-", "distil-whisper_", "openai_whisper-small en", "openai_whisper-../small", "openai_whisper-small*", "openai_whisper-small\n"] {
+            XCTAssertFalse(WhisperModel(rawValue: invalid).isPlausibleVariant, invalid)
+        }
         XCTAssertFalse(WhisperModel(rawValue: "parakeet-tdt-0.6b-v3").isPlausibleVariant)
     }
 

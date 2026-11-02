@@ -120,8 +120,7 @@ class ModelManager: ObservableObject {
     /// turbo build indistinguishable from its parent (`large-v3_947MB` was reported as
     /// `large-v3`). The full name is now preserved so each variant is tracked independently.
     nonisolated static func isModelVariantFolder(_ name: String) -> Bool {
-        name.hasPrefix("openai_whisper-") || name.hasPrefix("distil-whisper_")
-            || WhisperModel.legacyModels.contains(where: { $0.rawValue == name })
+        WhisperModel(rawValue: name).isPlausibleVariant
     }
 
     /// Exact-match a download folder against a model id.

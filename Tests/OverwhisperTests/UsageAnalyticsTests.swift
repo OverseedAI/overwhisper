@@ -25,6 +25,7 @@ final class UsageAnalyticsTests: XCTestCase {
         let properties = AnalyticsPrivacy.sanitized([
             "engine": "whisperkit",
             "outcome": "success",
+            "source": AnalyticsTranscriptionSource.historyRetry.rawValue,
             "$app_version": "1.8.0",
             "$locale": "en_CA",
             "$timezone": "America/Vancouver",
@@ -34,6 +35,7 @@ final class UsageAnalyticsTests: XCTestCase {
 
         XCTAssertEqual(properties["engine"] as? String, "whisperkit")
         XCTAssertEqual(properties["outcome"] as? String, "success")
+        XCTAssertEqual(properties["source"] as? String, "history_retry")
         XCTAssertEqual(properties["$app_version"] as? String, "1.8.0")
         XCTAssertNil(properties["$locale"])
         XCTAssertNil(properties["$timezone"])
@@ -43,6 +45,7 @@ final class UsageAnalyticsTests: XCTestCase {
 
     func testPrivacyAllowlistRejectsUnknownEvents() {
         XCTAssertTrue(AnalyticsPrivacy.allowedEvents.contains("dictation_completed"))
+        XCTAssertTrue(AnalyticsPrivacy.allowedEvents.contains("transcription_retry_completed"))
         XCTAssertFalse(AnalyticsPrivacy.allowedEvents.contains("$screen"))
         XCTAssertFalse(AnalyticsPrivacy.allowedEvents.contains("$exception"))
     }

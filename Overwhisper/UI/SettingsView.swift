@@ -24,7 +24,7 @@ struct SettingsView: View {
                 }
                 .environmentObject(appState)
 
-            HistorySettingsView()
+            HistorySettingsView(store: appState.debugSessionStore)
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
@@ -162,7 +162,7 @@ struct GeneralSettingsView: View {
                     Text("YouTube")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Link("@halshin_software", destination: URL(string: "https://www.youtube.com/@halshin_software")!)
+                    Link("@halshin", destination: URL(string: "https://www.youtube.com/@halshin")!)
                 }
             } header: {
                 Text("Support")
@@ -266,47 +266,8 @@ struct TranscriptionSettingsView: View {
     }
 
 
-    // Parakeet v3 transcribes 25 European languages (auto-detected). The
-    // language selection is passed as a script hint where applicable; codes
-    // outside FluidAudio's script-filter enum fall back to auto-detection.
-    private let parakeetV3Languages = [
-        ("auto", "Auto-detect"),
-        ("bg", "Bulgarian"),
-        ("hr", "Croatian"),
-        ("cs", "Czech"),
-        ("da", "Danish"),
-        ("nl", "Dutch"),
-        ("en", "English"),
-        ("et", "Estonian"),
-        ("fi", "Finnish"),
-        ("fr", "French"),
-        ("de", "German"),
-        ("el", "Greek"),
-        ("hu", "Hungarian"),
-        ("it", "Italian"),
-        ("lv", "Latvian"),
-        ("lt", "Lithuanian"),
-        ("mt", "Maltese"),
-        ("pl", "Polish"),
-        ("pt", "Portuguese"),
-        ("ro", "Romanian"),
-        ("sk", "Slovak"),
-        ("sl", "Slovenian"),
-        ("es", "Spanish"),
-        ("sv", "Swedish"),
-        ("ru", "Russian"),
-        ("uk", "Ukrainian")
-    ]
-
-    // Parakeet v2 is English-only.
-    private let parakeetV2Languages = [
-        ("en", "English")
-    ]
-
-    // The language options offered for the active engine/model selection.
     private var availableLanguages: [(String, String)] {
-        guard isUsingParakeet else { return WhisperLanguages.all }
-        return appState.parakeetModel == .v2English ? parakeetV2Languages : parakeetV3Languages
+        TranscriptionLanguagePolicy.choices(engine: appState.transcriptionEngine, parakeet: appState.parakeetModel)
     }
 
     private var engineDescription: String {
@@ -345,12 +306,6 @@ struct TranscriptionSettingsView: View {
                 Text("Select the language you'll be speaking, or Auto-detect to let the model identify it.")
                     .font(.caption)
                     .foregroundColor(.secondary)
-            }
-        }
-        .onChange(of: appState.parakeetModel) { _, newModel in
-            // v2 only speaks English; clamp any stale multilingual selection.
-            if isUsingParakeet, newModel == .v2English {
-                appState.language = "en"
             }
         }
     }
@@ -972,8 +927,13 @@ struct RecordingSettingsView: View {
 
 struct HistorySettingsView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject var store: DebugSessionStore
     @StateObject private var player = DebugAudioPlayer()
     @State private var expandedSessionID: UUID?
+    @State private var pendingPolicy: AudioRetentionPolicy?
+    @State private var pendingDeletionCount = 0
+    @State private var showRetentionConfirmation = false
+    @State private var showClearConfirmation = false
 
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -989,35 +949,90 @@ struct HistorySettingsView: View {
     }()
 
     private var sessions: [TranscriptionDebugSession] {
-        appState.debugSessionStore.sessions
+        store.sessions
+    }
+
+    private var summaryText: String {
+        let count = "\(sessions.count) recent transcription\(sessions.count == 1 ? "" : "s")"
+        guard store.totalAudioBytes > 0 else { return count }
+        let size = ByteCountFormatter.string(fromByteCount: store.totalAudioBytes, countStyle: .file)
+        return "\(count) · \(size) on disk"
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if !sessions.isEmpty {
-                HStack(spacing: 8) {
-                    Text("\(sessions.count) recent transcription\(sessions.count == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.selectFile(
-                            nil, inFileViewerRootedAtPath: appState.debugSessionStore.rootDirectory.path)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+            HStack(spacing: 8) {
+                Text(summaryText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button("Show in Finder") {
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.rootDirectory.path)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                if store.clearableRecordingCount > 0 {
                     Button("Clear All") {
-                        player.stop()
-                        appState.debugSessionStore.clear()
+                        pendingDeletionCount = store.clearableRecordingCount
+                        showClearConfirmation = true
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .disabled(store.metadataUnavailable || appState.retryingSessionID != nil)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+
+            HStack(spacing: 16) {
+                Picker("Keep at most", selection: Binding(
+                    get: { appState.audioRetentionMaxCount },
+                    set: { requestPolicy(AudioRetentionPolicy(maxCount: $0.limit, maxAge: appState.audioRetentionPolicy.maxAge)) }
+                )) {
+                    ForEach(AudioRetentionCount.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+
+                Picker("Delete older than", selection: Binding(
+                    get: { appState.audioRetentionAge },
+                    set: { requestPolicy(AudioRetentionPolicy(maxCount: appState.audioRetentionPolicy.maxCount, maxAge: $0.maxAge)) }
+                )) {
+                    ForEach(AudioRetentionAge.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+
+                Spacer()
+            }
+            .font(.caption)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .disabled(store.metadataUnavailable || appState.retryingSessionID != nil)
+            .help("These limits delete saved recordings and their History entries. Recent Transcriptions text is kept separately.")
+
+            if let error = store.cleanupError {
+                HStack(alignment: .top) {
+                    Text(error).font(.caption).foregroundColor(.orange)
+                    Spacer()
+                    Button("Retry") { store.retryCleanup() }.controlSize(.small)
                 }
                 .padding(.horizontal)
-                .padding(.vertical, 8)
-
-                Divider()
+                .padding(.bottom, 8)
             }
+            if store.orphanedAudioCount > 0 {
+                Text("\(store.orphanedAudioCount) unindexed recording(s) included in disk usage. Age limits and Clear All also apply to these files.")
+                    .font(.caption).foregroundColor(.secondary)
+                    .padding(.horizontal).padding(.bottom, 8)
+            }
+
+            Divider()
 
             if sessions.isEmpty {
                 VStack(spacing: 12) {
@@ -1042,7 +1057,7 @@ struct HistorySettingsView: View {
                                 session: session,
                                 isExpanded: expandedSessionID == session.id,
                                 player: player,
-                                store: appState.debugSessionStore,
+                                store: store,
                                 dateFormatter: dateFormatter,
                                 dayFormatter: dayFormatter,
                                 onToggle: {
@@ -1059,6 +1074,44 @@ struct HistorySettingsView: View {
                 }
             }
         }
+        .onAppear { store.retryCleanup() }
+        .alert("Permanently delete recordings?", isPresented: $showRetentionConfirmation) {
+            Button("Cancel", role: .cancel) { pendingPolicy = nil }
+            Button("Delete \(pendingDeletionCount) Recordings", role: .destructive) {
+                guard appState.retryingSessionID == nil, let policy = pendingPolicy else { return }
+                if store.deletionCount(for: policy) > pendingDeletionCount {
+                    // New recordings arrived while the dialog was open. Show the
+                    // updated count rather than authorize additional deletions.
+                    DispatchQueue.main.async { requestPolicy(policy) }
+                } else {
+                    appState.audioRetentionPolicy = policy
+                    pendingPolicy = nil
+                }
+            }
+        } message: {
+            Text("This will permanently delete \(pendingDeletionCount) saved recording(s), including their audio and History entries. This cannot be undone. Recent Transcriptions text is kept separately.")
+        }
+        .alert("Clear saved recordings?", isPresented: $showClearConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete \(pendingDeletionCount) Recordings", role: .destructive) {
+                guard appState.retryingSessionID == nil else { return }
+                if store.clearableRecordingCount > pendingDeletionCount {
+                    pendingDeletionCount = store.clearableRecordingCount
+                    DispatchQueue.main.async { showClearConfirmation = true }
+                } else {
+                    player.stop()
+                    store.clear()
+                }
+            }
+        } message: {
+            Text("This will permanently delete \(pendingDeletionCount) saved recording(s), including their audio and History entries. This cannot be undone.")
+        }
+        // Retention pruning can delete the file that is currently playing.
+        .onReceive(store.$sessions) { sessions in
+            guard let current = player.currentURL else { return }
+            let stillPresent = sessions.contains { store.audioURL(for: $0) == current }
+            if !stillPresent { player.stop() }
+        }
         // Switching to another settings tab tears the view down normally…
         .onDisappear { player.stop() }
         // …but closing the window doesn't: it's kept alive (isReleasedWhenClosed
@@ -1068,6 +1121,17 @@ struct HistorySettingsView: View {
             if (note.object as? NSWindow)?.title == "Overwhisper Settings" {
                 player.stop()
             }
+        }
+    }
+
+    private func requestPolicy(_ policy: AudioRetentionPolicy) {
+        let count = store.deletionCount(for: policy)
+        if count > 0 {
+            pendingPolicy = policy
+            pendingDeletionCount = count
+            showRetentionConfirmation = true
+        } else {
+            appState.audioRetentionPolicy = policy
         }
     }
 }
@@ -1129,6 +1193,7 @@ struct PositionCell: View {
 }
 
 struct DebugSessionRow: View {
+    @EnvironmentObject var appState: AppState
     let session: TranscriptionDebugSession
     let isExpanded: Bool
     @ObservedObject var player: DebugAudioPlayer
@@ -1138,6 +1203,7 @@ struct DebugSessionRow: View {
     let onToggle: () -> Void
 
     private var statusColor: Color { session.success ? .green : .red }
+    private var isRetrying: Bool { appState.retryingSessionID == session.id }
 
     private var audioURL: URL? { store.audioURL(for: session) }
 
@@ -1260,6 +1326,23 @@ struct DebugSessionRow: View {
 
                     HStack {
                         Spacer()
+                        if audioURL != nil {
+                            if isRetrying {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Transcribing…")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Button(session.success ? "Transcribe Again" : "Retry") {
+                                    appState.retrySessionRequests.send(session)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(!appState.recordingState.isIdle)
+                                .help("Transcribe this recording again with the current engine. The result is copied to the clipboard, not pasted.")
+                            }
+                        }
                         if !session.transcribedText.isEmpty {
                             Button("Copy Result") {
                                 let pb = NSPasteboard.general
@@ -1277,6 +1360,7 @@ struct DebugSessionRow: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(isRetrying)
                     }
                 }
                 .padding(.horizontal, 12)
