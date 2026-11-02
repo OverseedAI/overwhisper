@@ -241,7 +241,7 @@ func whisperModelsSorted(_ models: [WhisperModel]) -> [WhisperModel] {
 /// therefore both how we unlock the full catalog and how we stay honest about what will work.
 @MainActor
 final class WhisperModelCatalog: ObservableObject {
-    /// Every variant published for this repo, including ones outside this device's tier.
+    /// SDK support-matrix variants plus known legacy offers, including variants outside this device's tier.
     @Published private(set) var models: [WhisperModel]
     /// Variants Argmax lists as supported on this device. Everything in `models` not in here is
     /// still offered, but flagged — see `isUntested(_:)`.
@@ -251,10 +251,14 @@ final class WhisperModelCatalog: ObservableObject {
     @Published private(set) var isRefreshing = false
     /// True once a remote refresh has succeeded; false means `models` is the offline fallback.
     @Published private(set) var didLoadRemoteCatalog = false
+    @Published private(set) var lastRefreshFailed = false
+
+    private let loadRemoteSupport: () async throws -> ModelSupport
 
     static let shared = WhisperModelCatalog()
 
-    init() {
+    init(loadRemoteSupport: @escaping () async throws -> ModelSupport = { try await fetchWhisperModelSupport() }) {
+        self.loadRemoteSupport = loadRemoteSupport
         // Seed from WhisperKit's bundled config so the picker is populated before (or without)
         // any network call.
         let local = WhisperKit.recommendedModels()
@@ -265,20 +269,18 @@ final class WhisperModelCatalog: ObservableObject {
     }
 
     /// Argmax's config splits variants into `supported` and `disabled` *per device tier*. The
-    /// union is the full published catalog; the split is advice about what Argmax has validated
-    /// on this hardware. We show the union so no model is hidden — an M1 sees the same list as
-    /// an M4 — and mark the difference in the UI instead of silently withholding it.
+    /// union supplies known variants, not a complete repository listing. Keep the legacy offers
+    /// too, since a missing support-matrix entry does not mean a model was withdrawn.
     private static func union(supported: [String], disabled: [String]) -> [WhisperModel] {
         var seen = Set<String>()
-        return (supported + disabled).compactMap { name in
+        return (supported + disabled + WhisperModel.legacyModels.map(\.variantName)).compactMap { name in
             guard seen.insert(name).inserted else { return nil }
             return WhisperModel(rawValue: name)
         }
     }
 
-    /// True when Argmax doesn't list this variant for the current device. It is still selectable;
-    /// this only drives a UI hint, since the practical outcome is usually slower inference rather
-    /// than outright failure, and the user is entitled to decide.
+    /// Absence from the support matrix is advisory; it does not establish whether a model
+    /// works or fails. Exact choices retain that metadata without promising a CPU fallback.
     func isUntested(_ model: WhisperModel) -> Bool {
         !supportedOnThisDevice.isEmpty && !supportedOnThisDevice.contains(model)
     }
@@ -292,22 +294,33 @@ final class WhisperModelCatalog: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
 
-        let support = await WhisperKit.recommendedRemoteModels()
-        let supported = support.supported
-
-        guard !supported.isEmpty else {
-            AppLogger.transcription.warning("Remote model catalog empty; keeping bundled fallback list")
-            return
+        do {
+            let support = try await loadRemoteSupport()
+            guard !support.supported.isEmpty else { throw URLError(.cannotParseResponse) }
+            let fetched = Self.union(supported: support.supported, disabled: support.disabled)
+            supportedOnThisDevice = Set(support.supported.map(WhisperModel.init(rawValue:)))
+            models = whisperModelsSorted(fetched)
+            recommended = WhisperModel(rawValue: support.default)
+            didLoadRemoteCatalog = true
+            lastRefreshFailed = false
+        } catch {
+            // Keep the last successful list. The SDK's convenience API returns its bundled
+            // fallback on failure, so it cannot tell us whether a refresh actually succeeded.
+            lastRefreshFailed = true
+            AppLogger.transcription.warning("Model catalog refresh unavailable; keeping current list")
         }
-
-        let fetched = Self.union(supported: supported, disabled: support.disabled)
-        supportedOnThisDevice = Set(supported.map(WhisperModel.init(rawValue:)))
-        models = whisperModelsSorted(fetched)
-        recommended = WhisperModel(rawValue: support.default)
-        didLoadRemoteCatalog = true
-
-        AppLogger.transcription.info(
-            "Loaded \(fetched.count) model variants (\(supported.count) listed for this device, recommended: \(support.default))"
-        )
     }
+}
+
+/// Public metadata only: no Hugging Face token lookup, model download, or shared cache writes.
+private func fetchWhisperModelSupport() async throws -> ModelSupport {
+    let url = URL(string: "https://huggingface.co/argmaxinc/whisperkit-coreml/resolve/main/config.json")!
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 15
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1_048_576 else {
+        throw URLError(.badServerResponse)
+    }
+    let config = try JSONDecoder().decode(ModelSupportConfig.self, from: data)
+    return config.modelSupport()
 }
