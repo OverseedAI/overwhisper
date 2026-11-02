@@ -6,6 +6,19 @@
     <description>Most recent updates to Overwhisper</description>
     <language>en</language>
     <item>
+      <title>Version 1.10.0</title>
+      <pubDate>Mon, 02 Nov 2026 21:58:26 +0000</pubDate>
+      <sparkle:version>49</sparkle:version>
+      <sparkle:shortVersionString>1.10.0</sparkle:shortVersionString>
+      <description><![CDATA[<h2>Version 1.10.0</h2><ul><li>Choose Small, Medium, or Large transcription models with clear speed and accuracy guidance. Exact model variants remain available under Advanced.</li><li>Model choices now follow your language and translation settings. Switching languages never starts an unexpected download, and existing model selections are preserved.</li><li>Expanded the language picker, including Hindi, Bengali, Urdu, and more.</li><li>Retry failed transcriptions or transcribe saved recordings again from History.</li><li>Choose how long to keep saved recordings, with automatic cleanup by age or recording count.</li><li>Fixed Escape cancellation so the key does not also reach the app you are dictating into, and cancelled transcriptions cannot insert late results.</li><li>Improved model switching, download status, and recognition of previously downloaded models.</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/OverseedAI/overwhisper/releases/download/v1.10.0/Overwhisper-1.10.0.dmg"
+        length="7728096"
+        type="application/octet-stream"
+        sparkle:edSignature="QuhitEIAp0J4T1NOer+o4u/n+zi8LqLQsr3Xj1QLg7frk0i550SLcn5IEJy6yDI5OXe9NFoO1j5ZcTunx9NVAQ=="
+      />
+    </item>
+    <item>
       <title>Version 1.9.3</title>
       <pubDate>Tue, 08 Sep 2026 18:02:19 +0000</pubDate>
       <sparkle:version>48</sparkle:version>
