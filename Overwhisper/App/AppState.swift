@@ -229,14 +229,30 @@ class AppState: ObservableObject {
     @Published var whisperModel: WhisperModel {
         didSet { UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel") }
     }
+    /// The curated size the user chose (Small/Medium/Large), or nil for an exact model picked
+    /// under "Choose exact model". Curated choices follow Language/Translate; custom ones don't.
+    @Published var whisperModelTier: WhisperModelTier? {
+        didSet {
+            UserDefaults.standard.set(
+                whisperModelTier?.rawValue ?? WhisperModelSelectionPolicy.customTierStorageValue,
+                forKey: "whisperModelTier"
+            )
+        }
+    }
     @Published var parakeetModel: ParakeetModelType {
         didSet { UserDefaults.standard.set(parakeetModel.rawValue, forKey: "parakeetModel") }
     }
     @Published var language: String {
-        didSet { UserDefaults.standard.set(language, forKey: "language") }
+        didSet {
+            UserDefaults.standard.set(language, forKey: "language")
+            reconcileCuratedWhisperModel()
+        }
     }
     @Published var translateToEnglish: Bool {
-        didSet { UserDefaults.standard.set(translateToEnglish, forKey: "translateToEnglish") }
+        didSet {
+            UserDefaults.standard.set(translateToEnglish, forKey: "translateToEnglish")
+            reconcileCuratedWhisperModel()
+        }
     }
     @Published var enableCloudFallback: Bool {
         didSet { UserDefaults.standard.set(enableCloudFallback, forKey: "enableCloudFallback") }
@@ -379,7 +395,14 @@ class AppState: ObservableObject {
         // A malformed id falls back to the default rather than persisting a model that can never
         // initialize — otherwise the app stays wedged until the user finds Reset in Settings.
         let storedModel = WhisperModel(rawValue: modelStr)
-        self.whisperModel = storedModel.isPlausibleVariant ? storedModel : .smallEn
+        let initialModel = storedModel.isPlausibleVariant ? storedModel : .smallEn
+        self.whisperModel = initialModel
+        // Existing users have no stored tier; infer it from their model so nothing changes on
+        // upgrade — `small.en` simply shows up as Small. Non-curated variants stay custom.
+        self.whisperModelTier = WhisperModelSelectionPolicy.initialTier(
+            storedValue: UserDefaults.standard.string(forKey: "whisperModelTier"),
+            model: initialModel
+        )
 
         let parakeetModelStr = UserDefaults.standard.string(forKey: "parakeetModel") ?? ParakeetModelType.v3Multilingual.rawValue
         self.parakeetModel = ParakeetModelType(rawValue: parakeetModelStr) ?? .v3Multilingual
@@ -387,7 +410,9 @@ class AppState: ObservableObject {
         let storedParakeetDownloads = UserDefaults.standard.stringArray(forKey: "parakeetDownloadedModels") ?? []
         self.parakeetDownloadedModels = Set(storedParakeetDownloads)
 
-        self.language = UserDefaults.standard.string(forKey: "language") ?? "auto"
+        self.language = WhisperModelSelectionPolicy.initialLanguage(
+            storedValue: UserDefaults.standard.string(forKey: "language"), model: initialModel
+        )
         self.translateToEnglish = UserDefaults.standard.bool(forKey: "translateToEnglish")
         self.enableCloudFallback = UserDefaults.standard.bool(forKey: "enableCloudFallback")
         self.customVocabulary = UserDefaults.standard.string(forKey: "customVocabulary") ?? ""
@@ -550,9 +575,12 @@ class AppState: ObservableObject {
         recordingMode = .toggle
         overlayPosition = .bottomRight
         transcriptionEngine = .whisperKit
-        whisperModel = .smallEn
+        // Reset the *choice* to the recommended size, then let the language settings below pick
+        // its variant. The active model only switches if that variant is already downloaded;
+        // otherwise Settings offers "Download & use" rather than starting a download here.
+        whisperModelTier = .recommended
         parakeetModel = .v3Multilingual
-        language = "auto"
+        language = "en"
         translateToEnglish = false
         enableCloudFallback = false
         customVocabulary = ""
@@ -569,6 +597,60 @@ class AppState: ObservableObject {
         analyticsEnabled = false
         toggleHotkeyConfig = .defaultToggle
         pushToTalkHotkeyConfig = .defaultPushToTalk
+        reconcileCuratedWhisperModel()
+    }
+
+    // MARK: - WhisperKit model selection
+
+    /// Chooses a curated size. Returns false (changing nothing) if its variant for the current
+    /// language isn't downloaded — callers download first, so selection never downloads.
+    @discardableResult
+    func selectWhisperModelTier(_ tier: WhisperModelTier) -> Bool {
+        let target = WhisperModelSelectionPolicy.model(
+            for: tier,
+            language: language,
+            translateToEnglish: translateToEnglish
+        )
+        guard downloadedModels.contains(target.variantName) else { return false }
+
+        whisperModelTier = tier
+        activateWhisperModel(target)
+        return true
+    }
+
+    /// An exact choice stays pinned across language changes, including curated variants.
+    func selectExactWhisperModel(_ model: WhisperModel) {
+        guard downloadedModels.contains(model.variantName) else { return }
+        whisperModelTier = nil
+        activateWhisperModel(model)
+    }
+
+    /// Keeps a curated choice consistent with Language/Translate, switching only to a variant
+    /// that is already on disk. Skipped for other engines so a language change while using
+    /// Parakeet or OpenAI doesn't reinitialize them; the WhisperKit tier row offers "Use" later.
+    func reconcileCuratedWhisperModel() {
+        guard transcriptionEngine == .whisperKit else { return }
+        guard let next = WhisperModelSelectionPolicy.reconciledModel(
+            current: whisperModel,
+            tier: whisperModelTier,
+            language: language,
+            translateToEnglish: translateToEnglish,
+            downloadedVariants: downloadedModels
+        ) else { return }
+        whisperModel = next
+    }
+
+    /// Assigning publishes even when the value is equal, and every publish reinitializes the
+    /// engine, so only assign real changes. Equality is by variant, so `small.en` and
+    /// `openai_whisper-small.en` are the same model.
+    private func activateWhisperModel(_ model: WhisperModel) {
+        if transcriptionEngine != .whisperKit {
+            transcriptionEngine = .whisperKit
+        }
+        if whisperModel != model {
+            whisperModel = model
+        }
+        isModelDownloaded = downloadedModels.contains(model.variantName)
     }
 
     var hasChosenAnalyticsPreference: Bool {

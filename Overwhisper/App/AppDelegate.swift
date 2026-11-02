@@ -46,7 +46,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingLimitTimer: Timer?
 
     private var cancellables = Set<AnyCancellable>()
-    private var initializationTask: Task<Void, Never>?
+    private lazy var engineInitializationQueue = EngineInitializationQueue { [weak self] in
+        await self?.initializeTranscriptionEngine()
+    }
     private var transcriptionTask: Task<Void, Never>?
     private var escapeKeyMonitor: Any?
     private var errorResetTimer: Timer?
@@ -82,6 +84,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.regular)
             audioDeviceManager = AudioDeviceManager()
             modelManager = ModelManager(appState: appState)
+            if ProcessInfo.processInfo.arguments.contains("--preview-downloaded") {
+                // Preview metadata only; no model binaries are downloaded or loaded.
+                let models: Set<String> = ["openai_whisper-small.en", "openai_whisper-small",
+                                           "openai_whisper-medium.en", "openai_whisper-large-v3",
+                                           "openai_whisper-large-v3_947MB"]
+                modelManager.downloadedModels = models
+                appState.downloadedModels = models
+                appState.isModelDownloaded = models.contains(appState.whisperModel.variantName)
+            }
             openSettings()
             return
         }
@@ -117,9 +128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func launchEngineInitialization() {
-        initializationTask = Task {
-            await initializeTranscriptionEngine()
-        }
+        engineInitializationQueue.request()
     }
 
     private func setupSleepWakeHandling() {
@@ -1032,7 +1041,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Recording may have started while the engine was still loading —
         // wait for any in-flight initialization before transcribing.
-        await initializationTask?.value
+        await engineInitializationQueue.waitUntilIdle()
         while appState.isInitializingEngine && !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -1465,7 +1474,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(audioDeviceManager)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -1482,6 +1491,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         window.isReleasedWhenClosed = false
 
+        if AppEnvironment.isSettingsPreview {
+            window.setContentSize(NSSize(width: 520, height: 620))
+            window.center()
+        }
         self.settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

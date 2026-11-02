@@ -183,30 +183,74 @@ struct TranscriptionSettingsView: View {
     @ObservedObject var modelManager: ModelManager
     @ObservedObject private var catalog = WhisperModelCatalog.shared
 
-    /// The selected model is always listed, even if this device's support tier omits it, so a
-    /// previously chosen model never silently vanishes from the UI.
-    /// Adds any model the user actually has — selected or already downloaded — that the catalog
-    /// doesn't list, so nothing the user owns can become invisible (and therefore undeletable).
-    private func withLocalModels(_ models: [WhisperModel], englishOnly: Bool) -> [WhisperModel] {
-        var extras: [WhisperModel] = []
+    @State private var showExactModels = false
+    @State private var modelDownloadError: String?
 
-        let selected = appState.whisperModel
-        if selected.isEnglishOnly == englishOnly, !models.contains(selected) {
-            extras.append(selected)
+    /// Every exact variant worth listing under "Choose exact model": the catalog plus curated
+    /// tier targets, the selection and anything on disk, so nothing the user owns is hidden.
+    private var exactModelChoices: [WhisperModel] {
+        WhisperModelSelectionPolicy.exactChoices(
+            catalog: catalog.models,
+            selected: appState.whisperModel,
+            downloadedVariants: appState.downloadedModels
+        )
+    }
+
+    private func tierRowState(_ tier: WhisperModelTier) -> WhisperTierRowState {
+        WhisperModelSelectionPolicy.rowState(
+            tier: tier,
+            selectedTier: appState.whisperModelTier,
+            active: appState.whisperModel,
+            language: appState.language,
+            translateToEnglish: appState.translateToEnglish,
+            downloadedVariants: appState.downloadedModels
+        )
+    }
+
+    /// Downloads a tier's variant, then switches to it — unless the user picked something else
+    /// in the meantime, in which case the download is simply left available.
+    private func downloadAndUse(_ tier: WhisperModelTier) {
+        let target = WhisperModelSelectionPolicy.model(
+            for: tier,
+            language: appState.language,
+            translateToEnglish: appState.translateToEnglish
+        )
+        let modelBefore = appState.whisperModel
+        let tierBefore = appState.whisperModelTier
+
+        Task { @MainActor in
+            do {
+                try await modelManager.downloadModel(target.variantName)
+            } catch {
+                modelDownloadError = error.localizedDescription
+                return
+            }
+            guard appState.whisperModel == modelBefore, appState.whisperModelTier == tierBefore else { return }
+            guard WhisperModelSelectionPolicy.model(for: tier, language: appState.language,
+                                                   translateToEnglish: appState.translateToEnglish) == target else { return }
+            appState.selectWhisperModelTier(tier)
         }
+    }
 
-        // A model can be on disk but absent from every support tier (e.g. medium.en, which no
-        // Mac tier lists). Without this it would be unreachable in the UI, so the user could
-        // neither select nor delete it — it would just silently occupy disk space.
-        for name in appState.downloadedModels {
-            let downloaded = WhisperModel(rawValue: name)
-            guard downloaded.isEnglishOnly == englishOnly else { continue }
-            guard !models.contains(downloaded), !extras.contains(downloaded) else { continue }
-            extras.append(downloaded)
+    private var modelFooter: String {
+        let variant = WhisperModelSelectionPolicy.variant(
+            language: appState.language,
+            translateToEnglish: appState.translateToEnglish
+        )
+        switch variant {
+        case .englishOnly:
+            return "English models are offered because Language is English."
+        case .multilingual:
+            let reason: String
+            if appState.translateToEnglish {
+                reason = "translation"
+            } else if appState.language == "auto" {
+                reason = "Auto-detect"
+            } else {
+                reason = WhisperModelSelectionPolicy.languageName(for: appState.language)
+            }
+            return "Multilingual models are offered for \(reason)."
         }
-
-        guard !extras.isEmpty else { return models }
-        return whisperModelsSorted(models + extras)
     }
 
     private var isUsingOpenAI: Bool {
@@ -276,6 +320,41 @@ struct TranscriptionSettingsView: View {
         }
     }
 
+    private var languageSection: some View {
+        Section {
+            Picker("Language", selection: $appState.language) {
+                ForEach(availableLanguages, id: \.0) { code, name in
+                    Text(name).tag(code)
+                }
+            }
+            .disabled(isUsingParakeet && appState.parakeetModel == .v2English)
+
+            Toggle("Translate to English", isOn: $appState.translateToEnglish)
+        } header: {
+            Text("Language")
+        } footer: {
+            if isUsingParakeet && appState.parakeetModel == .v2English {
+                Text("Parakeet v2 is English-only. Switch to v3 for other languages.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else if appState.translateToEnglish {
+                Text("Audio will be translated to English. Requires a multilingual model.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Select the language you'll be speaking, or Auto-detect to let the model identify it.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .onChange(of: appState.parakeetModel) { _, newModel in
+            // v2 only speaks English; clamp any stale multilingual selection.
+            if isUsingParakeet, newModel == .v2English {
+                appState.language = "en"
+            }
+        }
+    }
+
     var body: some View {
         List {
             // 1. Engine
@@ -295,61 +374,73 @@ struct TranscriptionSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
-            // 2. Model (right under engine)
+            // 2. WhisperKit: Language first, because it decides which variant each size uses.
             if isUsingWhisper {
+                languageSection
+
                 Section {
-                    ForEach(withLocalModels(catalog.englishModels, englishOnly: true)) { model in
-                        ModelRowView(
-                            model: model,
-                            isDownloaded: appState.downloadedModels.contains(model.variantName),
-                            isSelected: appState.whisperModel == model,
-                            isDownloading: appState.currentlyDownloadingModel == model.variantName,
+                    ForEach(WhisperModelTier.allCases) { tier in
+                        let state = tierRowState(tier)
+                        WhisperTierRowView(
+                            state: state,
+                            isDownloading: appState.currentlyDownloadingModel == state.target.variantName,
                             downloadProgress: appState.modelDownloadProgress,
-                            isRecommended: catalog.recommended == model,
-                            isUntested: catalog.isUntested(model),
-                            modelManager: modelManager
+                            isDownloadDisabled: appState.currentlyDownloadingModel != nil,
+                            onSelect: { _ = appState.selectWhisperModelTier(tier) },
+                            onDownloadAndUse: { downloadAndUse(tier) }
                         )
-                        .environmentObject(appState)
+                    }
+
+                    if appState.whisperModelTier == nil {
+                        CustomWhisperModelRowView(
+                            model: appState.whisperModel,
+                            isDownloaded: appState.downloadedModels.contains(appState.whisperModel.variantName)
+                        )
                     }
                 } header: {
-                    Text("English Models")
+                    Text("Model")
                 } footer: {
-                    Text("Optimized for English speech. Distil models are faster with near-equal accuracy.")
+                    Text(modelFooter)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
 
                 Section {
-                    ForEach(withLocalModels(catalog.multilingualModels, englishOnly: false)) { model in
-                        ModelRowView(
-                            model: model,
-                            isDownloaded: appState.downloadedModels.contains(model.variantName),
-                            isSelected: appState.whisperModel == model,
-                            isDownloading: appState.currentlyDownloadingModel == model.variantName,
-                            downloadProgress: appState.modelDownloadProgress,
-                            isRecommended: catalog.recommended == model,
-                            isUntested: catalog.isUntested(model),
-                            modelManager: modelManager
-                        )
-                        .environmentObject(appState)
-                    }
-                } header: {
-                    HStack {
-                        Text("Multilingual Models")
-                        if catalog.isRefreshing {
-                            ProgressView()
-                                .controlSize(.small)
+                    DisclosureGroup(isExpanded: $showExactModels) {
+                        ForEach(exactModelChoices) { model in
+                            ModelRowView(
+                                model: model,
+                                isDownloaded: appState.downloadedModels.contains(model.variantName),
+                                isSelected: appState.whisperModel == model,
+                                isDownloading: appState.currentlyDownloadingModel == model.variantName,
+                                downloadProgress: appState.modelDownloadProgress,
+                                isUntested: catalog.isUntested(model),
+                                modelManager: modelManager
+                            )
+                            .environmentObject(appState)
+                        }
+                    } label: {
+                        HStack {
+                            Text("Choose exact model")
+                            if catalog.isRefreshing {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
                         }
                     }
+                } header: {
+                    Text("Advanced")
                 } footer: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Supports 99+ languages including Korean, Japanese, Chinese, and more.")
-                        Text(catalog.didLoadRemoteCatalog
-                             ? "Showing all \(catalog.models.count) variants Argmax publishes for this Mac."
-                             : "Showing the bundled model list — couldn't reach Argmax's catalog.")
+                    if showExactModels {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Choose a specific build or manage downloaded models.")
+                            Text(catalog.lastRefreshFailed
+                                 ? (catalog.didLoadRemoteCatalog ? "Refresh unavailable. Keeping the last model list." : "Offline. Showing the bundled model list.")
+                                 : (catalog.didLoadRemoteCatalog ? "Model list updated." : "Showing the bundled model list."))
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     }
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                 }
             }
 
@@ -388,38 +479,9 @@ struct TranscriptionSettingsView: View {
                 }
             }
 
-            // 3. Language
-            Section {
-                Picker("Language", selection: $appState.language) {
-                    ForEach(availableLanguages, id: \.0) { code, name in
-                        Text(name).tag(code)
-                    }
-                }
-                .disabled(isUsingParakeet && appState.parakeetModel == .v2English)
-
-                Toggle("Translate to English", isOn: $appState.translateToEnglish)
-            } header: {
-                Text("Language")
-            } footer: {
-                if isUsingParakeet && appState.parakeetModel == .v2English {
-                    Text("Parakeet v2 is English-only. Switch to v3 for other languages.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else if appState.translateToEnglish {
-                    Text("Audio will be translated to English. Requires a multilingual model.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("Select the language you'll be speaking, or Auto-detect to let the model identify it.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .onChange(of: appState.parakeetModel) { _, newModel in
-                // v2 only speaks English; clamp any stale multilingual selection.
-                if isUsingParakeet, newModel == .v2English {
-                    appState.language = "en"
-                }
+            // 3. Language (WhisperKit shows it above the model instead)
+            if !isUsingWhisper {
+                languageSection
             }
 
             // 4. Custom Vocabulary (not supported by Parakeet)
@@ -460,10 +522,19 @@ struct TranscriptionSettingsView: View {
         }
         .listStyle(.inset)
         .task {
-            // Refresh once per Settings appearance so newly published variants show up without
-            // requiring an app update. Falls back to the bundled list when offline.
-            await catalog.refresh()
             modelManager.scanForModels()
+        }
+        .task(id: isUsingWhisper && showExactModels) {
+            guard isUsingWhisper && showExactModels else { return }
+            await catalog.refresh()
+        }
+        .alert("Model Download Failed", isPresented: Binding(
+            get: { modelDownloadError != nil },
+            set: { if !$0 { modelDownloadError = nil } }
+        )) {
+            Button("OK", role: .cancel) { modelDownloadError = nil }
+        } message: {
+            Text(modelDownloadError ?? "")
         }
     }
 }
@@ -476,64 +547,51 @@ struct ModelRowView: View {
     let isSelected: Bool
     let isDownloading: Bool
     let downloadProgress: Double
-    var isRecommended: Bool = false
     /// Argmax doesn't list this variant for this Mac. Still selectable — this is a hint, not a block.
     var isUntested: Bool = false
     let modelManager: ModelManager
 
     var body: some View {
         HStack {
-            // Selection indicator and model info - tappable area
-            HStack {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : (isDownloaded ? "circle" : "circle.dashed"))
-                    .foregroundColor(isSelected ? .accentColor : (isDownloaded ? .primary : .secondary))
-                    .font(.title3)
+            Button {
+                if isDownloaded { appState.selectExactWhisperModel(model) }
+            } label: {
+                HStack {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : (isDownloaded ? "circle" : "circle.dashed"))
+                        .foregroundColor(isSelected ? .accentColor : (isDownloaded ? .primary : .secondary))
+                        .font(.title3)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(model.displayName)
-                            .fontWeight(isSelected ? .semibold : .regular)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(model.displayName)
+                                .fontWeight(isSelected ? .semibold : .regular)
 
-                        if isDownloaded {
-                            Image(systemName: "checkmark.seal.fill")
-                                .foregroundColor(.green)
-                                .font(.caption)
+                            if isDownloaded {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                            }
+
+                            if isUntested {
+                                Text("Not validated for this Mac")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange.opacity(0.12))
+                                    .cornerRadius(4)
+                                    .help("This variant is absent from the SDK support list for this Mac. Compatibility is unverified; it may fail to load.")
+                            }
                         }
 
-                        if isRecommended {
-                            Text("Recommended")
-                                .font(.caption2)
-                                .foregroundColor(.accentColor)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.accentColor.opacity(0.12))
-                                .cornerRadius(4)
-                        }
-
-                        if isUntested {
-                            Text("Not validated for this Mac")
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.12))
-                                .cornerRadius(4)
-                                .help("Argmax lists this variant for other Apple Silicon generations. You can still use it; it may be slower or fall back to CPU.")
-                        }
+                        Text(model.size)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
-
-                    Text(model.size)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if isDownloaded && !isSelected {
-                    appState.transcriptionEngine = .whisperKit
-                    appState.whisperModel = model
-                }
-            }
+            .buttonStyle(.plain)
 
             Spacer()
 
@@ -590,6 +648,171 @@ struct ModelRowView: View {
         } message: {
             Text("Are you sure you want to delete \(model.displayName)? You'll need to download it again to use it.")
         }
+    }
+}
+
+/// One of the three curated sizes. Selecting a downloaded size is a row click; anything that
+/// downloads is an explicit "Download & use" button, so no click or setting change can start a
+/// large download by surprise.
+struct WhisperTierRowView: View {
+    let state: WhisperTierRowState
+    let isDownloading: Bool
+    let downloadProgress: Double
+    let isDownloadDisabled: Bool
+    let onSelect: () -> Void
+    let onDownloadAndUse: () -> Void
+
+    private var details: String {
+        "\(state.target.size) · \(state.target.isEnglishOnly ? "English-only" : "Multilingual")"
+    }
+
+    var body: some View {
+        HStack {
+            Button {
+                if state.action == .select || state.action == .use { onSelect() }
+            } label: {
+                HStack(alignment: .top) {
+                    Image(systemName: state.isSelected ? "checkmark.circle.fill" : (state.isDownloaded ? "circle" : "circle.dashed"))
+                        .foregroundColor(state.isSelected ? .accentColor : (state.isDownloaded ? .primary : .secondary))
+                        .font(.title3)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(state.tier.title)
+                                .fontWeight(state.isSelected ? .semibold : .regular)
+
+                            if state.isDownloaded {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                                    .help("Downloaded")
+                            }
+
+                            if state.tier == .recommended {
+                                Text("Recommended")
+                                    .font(.caption2)
+                                    .foregroundColor(.accentColor)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentColor.opacity(0.12))
+                                    .cornerRadius(4)
+                            }
+                        }
+
+                        Text(state.tier.summary)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 6) {
+                            Text(details)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+
+                        }
+
+                        if let note = state.note {
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Image(systemName: "info.circle")
+                                    .foregroundColor(.orange)
+                                Text(note)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .font(.caption)
+                            .padding(.top, 2)
+                        }
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            trailingControl
+        }
+        .padding(.vertical, 4)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+    }
+
+    @ViewBuilder
+    private var trailingControl: some View {
+        if isDownloading {
+            HStack(spacing: 8) {
+                ProgressView(value: downloadProgress)
+                    .frame(width: 60)
+                Text("\(Int(downloadProgress * 100))%")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 35)
+            }
+        } else {
+            switch state.action {
+            case .none:
+                Text("Active")
+                    .font(.caption)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(4)
+            case .select:
+                EmptyView()
+            case .use:
+                Button("Use", action: onSelect)
+                    .buttonStyle(.bordered)
+            case .downloadAndUse:
+                Button(action: onDownloadAndUse) {
+                    Label("Download & use", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isDownloadDisabled)
+            }
+        }
+    }
+}
+
+/// Shown under the sizes when the active model was picked under "Choose exact model" and isn't
+/// one of the curated sizes, so the current selection is always visible without the full list.
+struct CustomWhisperModelRowView: View {
+    let model: WhisperModel
+    let isDownloaded: Bool
+
+    var body: some View {
+        HStack {
+            HStack(alignment: .top) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.accentColor)
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.displayName)
+                        .fontWeight(.semibold)
+                    Text("Custom choice · \(model.size)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("Chosen under Choose exact model. Pick a size above to switch.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer()
+
+            Text(isDownloaded ? "Active" : "Not downloaded")
+                .font(.caption)
+                .foregroundColor(isDownloaded ? .green : .orange)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background((isDownloaded ? Color.green : Color.orange).opacity(0.1))
+                .cornerRadius(4)
+        }
+        .padding(.vertical, 4)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
     }
 }
 

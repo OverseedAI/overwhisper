@@ -42,6 +42,8 @@ class ModelManager: ObservableObject {
     }
 
     func scanForModels() {
+        // Visual review uses an isolated profile; do not enumerate personal model caches.
+        if AppEnvironment.isSettingsPreview { return }
         var foundModels: Set<String> = []
 
         // Check multiple possible WhisperKit cache locations
@@ -148,6 +150,13 @@ class ModelManager: ObservableObject {
         // string, so a bare name like "large-v3" matches several folders (`large-v3`,
         // `large-v3_947MB`, `large-v3-v20240930`, ...) and the download becomes ambiguous.
         let variant = WhisperModel(rawValue: modelName).variantName
+        if AppEnvironment.isSettingsPreview {
+            // Fixture metadata only. Preview controls never download or touch shared model files.
+            downloadedModels.insert(variant)
+            appState.downloadedModels = downloadedModels
+            appState.isModelDownloaded = downloadedModels.contains(appState.whisperModel.variantName)
+            return
+        }
 
         appState.isDownloadingModel = true
         appState.currentlyDownloadingModel = variant
@@ -196,6 +205,12 @@ class ModelManager: ObservableObject {
     }
 
     func deleteModel(_ modelName: String) throws {
+        if AppEnvironment.isSettingsPreview {
+            downloadedModels.remove(WhisperModel(rawValue: modelName).variantName)
+            appState.downloadedModels = downloadedModels
+            appState.isModelDownloaded = downloadedModels.contains(appState.whisperModel.variantName)
+            return
+        }
         let fileManager = FileManager.default
         var deleted = false
 
