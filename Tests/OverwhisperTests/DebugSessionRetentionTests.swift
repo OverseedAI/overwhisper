@@ -147,7 +147,7 @@ final class DebugSessionRetentionTests: XCTestCase {
 
   func testSettingPolicyPrunesImmediatelyAndPersists() throws {
     // Policy assignment and explicit pruning share the same injected clock.
-    let seeded = try seed(ages: [60, 2 * 86_400, 400 * 86_400], relativeTo: now)
+    let seeded = try seed(ages: [60, TimeInterval(2 * 86_400), TimeInterval(400 * 86_400)], relativeTo: now)
     let store = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} })
     XCTAssertEqual(store.sessions.count, 3)
 
@@ -255,7 +255,7 @@ final class DebugSessionRetentionTests: XCTestCase {
   }
 
   func testDeletionFailureRemainsTrackedAcrossRestartAndRetries() throws {
-    let seeded = try seed(ages: [2 * 86_400])
+    let seeded = try seed(ages: [TimeInterval(2 * 86_400)])
     var failRemoval = true
     let store = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} }, removeFile: { url in
       if failRemoval { throw CocoaError(.fileWriteNoPermission) }
@@ -324,7 +324,7 @@ final class DebugSessionRetentionTests: XCTestCase {
   }
 
   func testCorruptMetadataIsPreservedAndNeverTriggersOrphanSweep() throws {
-    let seeded = try seed(ages: [10 * 86_400])
+    let seeded = try seed(ages: [TimeInterval(10 * 86_400)])
     let metadataURL = root.appendingPathComponent("sessions.json")
     let corruptData = Data("broken metadata".utf8)
     try corruptData.write(to: metadataURL)
@@ -421,7 +421,7 @@ final class DebugSessionRetentionTests: XCTestCase {
   }
 
   func testRetentionDefersDeletionUntilActiveTranscriptionReleasesAudio() throws {
-    let seeded = try seed(ages: [2 * 86_400])
+    let seeded = try seed(ages: [TimeInterval(2 * 86_400)])
     let store = makeStore(AudioRetentionPolicy(maxCount: nil, maxAge: nil))
     XCTAssertNotNil(store.acquireAudio(for: seeded[0]))
     store.retentionPolicy = AudioRetentionPolicy(maxCount: nil, maxAge: 86_400)
