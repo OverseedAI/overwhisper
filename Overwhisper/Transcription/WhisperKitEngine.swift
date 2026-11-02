@@ -27,7 +27,8 @@ actor WhisperKitEngine: TranscriptionEngine {
 
         defer { isInitializing = false }
 
-        let modelName = await appState.whisperModel.rawValue
+        // Use the fully-qualified variant so quantized/turbo builds resolve unambiguously.
+        let modelName = await appState.whisperModel.variantName
 
         // Skip if already initialized with the same model
         if isInitialized && currentModel == modelName {

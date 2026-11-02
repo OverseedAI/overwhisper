@@ -105,61 +105,8 @@ enum ParakeetModelType: String, CaseIterable, Identifiable {
     }
 }
 
-enum WhisperModel: String, CaseIterable, Identifiable {
-    // English-only models (faster, more accurate for English)
-    case tinyEn = "tiny.en"
-    case baseEn = "base.en"
-    case smallEn = "small.en"
-    case mediumEn = "medium.en"
-    // Multilingual models (supports 99+ languages including Korean, Japanese, Chinese, etc.)
-    case tiny = "tiny"
-    case base = "base"
-    case small = "small"
-    case medium = "medium"
-    case largeV2 = "large-v2"
-    case largeV3 = "large-v3"
-    case largeV3Turbo = "large-v3_turbo"
-
-    var id: String { rawValue }
-
-    var isEnglishOnly: Bool {
-        switch self {
-        case .tinyEn, .baseEn, .smallEn, .mediumEn: return true
-        case .tiny, .base, .small, .medium, .largeV2, .largeV3, .largeV3Turbo: return false
-        }
-    }
-
-    var displayName: String {
-        switch self {
-        case .tinyEn, .tiny: return "Tiny"
-        case .baseEn, .base: return "Base"
-        case .smallEn, .small: return "Small"
-        case .mediumEn, .medium: return "Medium"
-        case .largeV2: return "Large v2"
-        case .largeV3: return "Large v3"
-        case .largeV3Turbo: return "Large v3 Turbo"
-        }
-    }
-
-    var size: String {
-        switch self {
-        case .tinyEn, .tiny: return "~75 MB"
-        case .baseEn, .base: return "~150 MB"
-        case .smallEn, .small: return "~500 MB"
-        case .mediumEn, .medium: return "~1.5 GB"
-        case .largeV2, .largeV3: return "~3 GB"
-        case .largeV3Turbo: return "~1.6 GB"
-        }
-    }
-
-    static var englishModels: [WhisperModel] {
-        [.tinyEn, .baseEn, .smallEn, .mediumEn]
-    }
-
-    static var multilingualModels: [WhisperModel] {
-        [.tiny, .base, .small, .medium, .largeV2, .largeV3, .largeV3Turbo]
-    }
-}
+// `WhisperModel` now lives in Transcription/WhisperModelCatalog.swift, where it is backed by
+// the full set of variants Argmax publishes rather than a hand-maintained enum.
 
 struct HotkeyConfig: Codable, Equatable {
     var keyCode: UInt32
@@ -277,19 +224,41 @@ class AppState: ObservableObject {
         didSet { defaults.set(overlayPosition.rawValue, forKey: "overlayPosition") }
     }
     @Published var transcriptionEngine: TranscriptionEngineType {
-        didSet { defaults.set(transcriptionEngine.rawValue, forKey: "transcriptionEngine") }
+        didSet {
+            defaults.set(transcriptionEngine.rawValue, forKey: "transcriptionEngine")
+            normalizeLanguageForEngine()
+        }
     }
     @Published var whisperModel: WhisperModel {
         didSet { defaults.set(whisperModel.rawValue, forKey: "whisperModel") }
     }
+    /// The curated size the user chose (Small/Medium/Large), or nil for an exact model picked
+    /// under "Choose exact model". Curated choices follow Language/Translate; custom ones don't.
+    @Published var whisperModelTier: WhisperModelTier? {
+        didSet {
+            defaults.set(
+                whisperModelTier?.rawValue ?? WhisperModelSelectionPolicy.customTierStorageValue,
+                forKey: "whisperModelTier"
+            )
+        }
+    }
     @Published var parakeetModel: ParakeetModelType {
-        didSet { defaults.set(parakeetModel.rawValue, forKey: "parakeetModel") }
+        didSet {
+            defaults.set(parakeetModel.rawValue, forKey: "parakeetModel")
+            normalizeLanguageForEngine()
+        }
     }
     @Published var language: String {
-        didSet { defaults.set(language, forKey: "language") }
+        didSet {
+            defaults.set(language, forKey: "language")
+            reconcileCuratedWhisperModel()
+        }
     }
     @Published var translateToEnglish: Bool {
-        didSet { defaults.set(translateToEnglish, forKey: "translateToEnglish") }
+        didSet {
+            defaults.set(translateToEnglish, forKey: "translateToEnglish")
+            reconcileCuratedWhisperModel()
+        }
     }
     @Published var enableCloudFallback: Bool {
         didSet { defaults.set(enableCloudFallback, forKey: "enableCloudFallback") }
@@ -459,7 +428,19 @@ class AppState: ObservableObject {
         self.transcriptionEngine = TranscriptionEngineType(rawValue: engineStr) ?? .whisperKit
 
         let modelStr = defaults.string(forKey: "whisperModel") ?? WhisperModel.smallEn.rawValue
-        self.whisperModel = WhisperModel(rawValue: modelStr) ?? .smallEn
+        // Any previously stored id stays valid: legacy short names ("small.en") and full variant
+        // names ("distil-whisper_distil-large-v3") both round-trip through WhisperModel.
+        // A malformed id falls back to the default rather than persisting a model that can never
+        // initialize — otherwise the app stays wedged until the user finds Reset in Settings.
+        let storedModel = WhisperModel(rawValue: modelStr)
+        let initialModel = storedModel.isPlausibleVariant ? storedModel : .smallEn
+        self.whisperModel = initialModel
+        // Existing users have no stored tier; infer it from their model so nothing changes on
+        // upgrade — `small.en` simply shows up as Small. Non-curated variants stay custom.
+        self.whisperModelTier = WhisperModelSelectionPolicy.initialTier(
+            storedValue: defaults.string(forKey: "whisperModelTier"),
+            model: initialModel
+        )
 
         let parakeetModelStr = defaults.string(forKey: "parakeetModel") ?? ParakeetModelType.v3Multilingual.rawValue
         self.parakeetModel = ParakeetModelType(rawValue: parakeetModelStr) ?? .v3Multilingual
@@ -467,7 +448,9 @@ class AppState: ObservableObject {
         let storedParakeetDownloads = defaults.stringArray(forKey: "parakeetDownloadedModels") ?? []
         self.parakeetDownloadedModels = Set(storedParakeetDownloads)
 
-        self.language = defaults.string(forKey: "language") ?? "auto"
+        self.language = WhisperModelSelectionPolicy.initialLanguage(
+            storedValue: defaults.string(forKey: "language"), model: initialModel
+        )
         self.translateToEnglish = defaults.bool(forKey: "translateToEnglish")
         self.enableCloudFallback = defaults.bool(forKey: "enableCloudFallback")
         self.customVocabulary = defaults.string(forKey: "customVocabulary") ?? ""
@@ -524,6 +507,7 @@ class AppState: ObservableObject {
         // Establish the saved policy before any activation/wake callback can
         // reconcile history with the store's initial default.
         self.debugSessionStore.retentionPolicy = self.audioRetentionPolicy
+        normalizeLanguageForEngine()
     }
 
     func startRecordingTimer() {
@@ -632,9 +616,12 @@ class AppState: ObservableObject {
         recordingMode = .toggle
         overlayPosition = .bottomRight
         transcriptionEngine = .whisperKit
-        whisperModel = .smallEn
+        // Reset the *choice* to the recommended size, then let the language settings below pick
+        // its variant. The active model only switches if that variant is already downloaded;
+        // otherwise Settings offers "Download & use" rather than starting a download here.
+        whisperModelTier = .recommended
         parakeetModel = .v3Multilingual
-        language = "auto"
+        language = "en"
         translateToEnglish = false
         enableCloudFallback = false
         customVocabulary = ""
@@ -652,6 +639,65 @@ class AppState: ObservableObject {
         analyticsEnabled = false
         toggleHotkeyConfig = .defaultToggle
         pushToTalkHotkeyConfig = .defaultPushToTalk
+        reconcileCuratedWhisperModel()
+    }
+
+    private func normalizeLanguageForEngine() {
+        let normalized = TranscriptionLanguagePolicy.normalized(language, engine: transcriptionEngine, parakeet: parakeetModel)
+        if normalized != language { language = normalized }
+    }
+
+    // MARK: - WhisperKit model selection
+
+    /// Chooses a curated size. Returns false (changing nothing) if its variant for the current
+    /// language isn't downloaded — callers download first, so selection never downloads.
+    @discardableResult
+    func selectWhisperModelTier(_ tier: WhisperModelTier) -> Bool {
+        let target = WhisperModelSelectionPolicy.model(
+            for: tier,
+            language: language,
+            translateToEnglish: translateToEnglish
+        )
+        guard downloadedModels.contains(target.variantName) else { return false }
+
+        whisperModelTier = tier
+        activateWhisperModel(target)
+        return true
+    }
+
+    /// An exact choice stays pinned across language changes, including curated variants.
+    func selectExactWhisperModel(_ model: WhisperModel) {
+        guard downloadedModels.contains(model.variantName) else { return }
+        whisperModelTier = nil
+        activateWhisperModel(model)
+    }
+
+    /// Keeps a curated choice consistent with Language/Translate, switching only to a variant
+    /// that is already on disk. Skipped for other engines so a language change while using
+    /// Parakeet or OpenAI doesn't reinitialize them; the WhisperKit tier row offers "Use" later.
+    func reconcileCuratedWhisperModel() {
+        guard transcriptionEngine == .whisperKit else { return }
+        guard let next = WhisperModelSelectionPolicy.reconciledModel(
+            current: whisperModel,
+            tier: whisperModelTier,
+            language: language,
+            translateToEnglish: translateToEnglish,
+            downloadedVariants: downloadedModels
+        ) else { return }
+        whisperModel = next
+    }
+
+    /// Assigning publishes even when the value is equal, and every publish reinitializes the
+    /// engine, so only assign real changes. Equality is by variant, so `small.en` and
+    /// `openai_whisper-small.en` are the same model.
+    private func activateWhisperModel(_ model: WhisperModel) {
+        if transcriptionEngine != .whisperKit {
+            transcriptionEngine = .whisperKit
+        }
+        if whisperModel != model {
+            whisperModel = model
+        }
+        isModelDownloaded = downloadedModels.contains(model.variantName)
     }
 
     var hasChosenAnalyticsPreference: Bool {

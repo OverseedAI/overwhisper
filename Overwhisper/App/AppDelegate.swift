@@ -7,7 +7,16 @@ import Sparkle
 
 enum AppEnvironment {
     /// True when running outside a real .app bundle (swift run / bare .build binary).
-    static let isDevBuild = Bundle.main.bundleIdentifier == nil
+    static let isDevBuild = Bundle.main.bundleIdentifier == nil || isSettingsPreview
+
+    /// A debug-only settings host for visual review without recording, hotkeys, or engine startup.
+    static var isSettingsPreview: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--settings-preview")
+        #else
+        return false
+        #endif
+    }
 }
 
 /// Engines may finish after cancellation. Only the current operation may deliver
@@ -72,7 +81,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingLimitTimer: Timer?
 
     private var cancellables = Set<AnyCancellable>()
-    private var initializationTask: Task<Void, Never>?
+    private lazy var engineInitializationQueue = EngineInitializationQueue { [weak self] in
+        await self?.initializeTranscriptionEngine()
+    }
     private let transcriptionTasks = TranscriptionTaskController()
     private var escapeKeyMonitor: EscapeKeyMonitor?
     private var errorResetTimer: Timer?
@@ -104,6 +115,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if AppEnvironment.isSettingsPreview {
+            NSApp.setActivationPolicy(.regular)
+            audioDeviceManager = AudioDeviceManager()
+            modelManager = ModelManager(appState: appState)
+            if ProcessInfo.processInfo.arguments.contains("--preview-downloaded") {
+                // Preview metadata only; no model binaries are downloaded or loaded.
+                let models: Set<String> = ["openai_whisper-small.en", "openai_whisper-small",
+                                           "openai_whisper-medium.en", "openai_whisper-large-v3",
+                                           "openai_whisper-large-v3_947MB"]
+                modelManager.downloadedModels = models
+                appState.downloadedModels = models
+                appState.isModelDownloaded = models.contains(appState.whisperModel.variantName)
+            }
+            openSettings()
+            return
+        }
+
         // Install crash reporter first
         CrashReporter.shared.install()
 
@@ -142,9 +170,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func launchEngineInitialization() {
-        initializationTask = Task {
-            await initializeTranscriptionEngine()
-        }
+        engineInitializationQueue.request()
     }
 
     private func setupSleepWakeHandling() {
@@ -545,7 +571,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let label: String
         switch appState.transcriptionEngine {
         case .whisperKit:
-            label = "WhisperKit · \(appState.whisperModel.rawValue)"
+            label = "WhisperKit · \(appState.whisperModel.displayName)"
         case .parakeet:
             label = "Parakeet · \(appState.parakeetModel == .v2English ? "v2 English" : "v3 Multilingual")"
         case .openAI:
@@ -867,7 +893,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Check if model is available when using WhisperKit
         if appState.transcriptionEngine == .whisperKit {
-            let currentModel = appState.whisperModel.rawValue
+            let currentModel = appState.whisperModel.variantName
             if !appState.downloadedModels.contains(currentModel) && !appState.isDownloadingModel {
                 showNoModelAlert()
                 return false
@@ -1083,7 +1109,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let modelLabel: String
         switch engineType {
         case .whisperKit:
-            modelLabel = "WhisperKit \(appState.whisperModel.rawValue)"
+            modelLabel = "WhisperKit \(appState.whisperModel.displayName)"
         case .parakeet:
             modelLabel = appState.parakeetModel.displayName
         case .openAI:
@@ -1128,7 +1154,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Recording may have started while the engine was still loading —
         // wait for any in-flight initialization before transcribing.
         if transcriptionTasks.isCurrent(operationID) {
-            await initializationTask?.value
+            await engineInitializationQueue.waitUntilIdle()
             while appState.isInitializingEngine && !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
@@ -1676,7 +1702,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(audioDeviceManager)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -1693,6 +1719,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         window.isReleasedWhenClosed = false
 
+        if AppEnvironment.isSettingsPreview {
+            window.setContentSize(NSSize(width: 520, height: 620))
+            window.center()
+        }
         self.settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

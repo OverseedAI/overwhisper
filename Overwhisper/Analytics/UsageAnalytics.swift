@@ -237,7 +237,7 @@ extension TranscriptionEngineType {
 extension AppState {
     var analyticsModel: String {
         switch transcriptionEngine {
-        case .whisperKit: return whisperModel.rawValue
+        case .whisperKit: return whisperModel.variantName
         case .parakeet: return parakeetModel.rawValue
         case .openAI: return "whisper-1"
         }
