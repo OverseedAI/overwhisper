@@ -17,6 +17,12 @@ enum AnalyticsDictationOutcome: String {
     case cancelled
 }
 
+enum AnalyticsTranscriptionSource: String {
+    case dictation
+    case historyRetry = "history_retry"
+    case menuRetry = "menu_retry"
+}
+
 enum AnalyticsDelivery: String {
     case pasted
     case clipboard
@@ -56,6 +62,7 @@ enum AnalyticsPrivacy {
         "model_download_completed",
         "model_download_failed",
         "dictation_completed",
+        "transcription_retry_completed",
     ]
 
     static let allowedProperties: Set<String> = [
@@ -80,6 +87,7 @@ enum AnalyticsPrivacy {
         "latency_bucket",
         "used_cloud_fallback",
         "delivery",
+        "source",
     ]
 
     static func sanitized(_ properties: [String: Any]) -> [String: Any] {
@@ -141,12 +149,14 @@ enum UsageAnalytics {
         recordingDuration: TimeInterval,
         latency: TimeInterval,
         usedCloudFallback: Bool,
-        delivery: AnalyticsDelivery = .none
+        delivery: AnalyticsDelivery = .none,
+        source: AnalyticsTranscriptionSource = .dictation
     ) {
         capture(
-            "dictation_completed",
+            source == .dictation ? "dictation_completed" : "transcription_retry_completed",
             properties: [
                 "outcome": outcome.rawValue,
+                "source": source.rawValue,
                 "engine": engine.rawValue,
                 "model": model,
                 "duration_bucket": AnalyticsBuckets.duration(recordingDuration),

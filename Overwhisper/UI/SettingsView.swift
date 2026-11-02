@@ -742,7 +742,7 @@ struct HistorySettingsView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(store.metadataUnavailable)
+                    .disabled(store.metadataUnavailable || appState.retryingSessionID != nil)
                 }
             }
             .padding(.horizontal)
@@ -778,7 +778,7 @@ struct HistorySettingsView: View {
             .font(.caption)
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .disabled(store.metadataUnavailable)
+            .disabled(store.metadataUnavailable || appState.retryingSessionID != nil)
             .help("These limits delete saved recordings and their History entries. Recent Transcriptions text is kept separately.")
 
             if let error = store.cleanupError {
@@ -842,7 +842,7 @@ struct HistorySettingsView: View {
         .alert("Permanently delete recordings?", isPresented: $showRetentionConfirmation) {
             Button("Cancel", role: .cancel) { pendingPolicy = nil }
             Button("Delete \(pendingDeletionCount) Recordings", role: .destructive) {
-                guard let policy = pendingPolicy else { return }
+                guard appState.retryingSessionID == nil, let policy = pendingPolicy else { return }
                 if store.deletionCount(for: policy) > pendingDeletionCount {
                     // New recordings arrived while the dialog was open. Show the
                     // updated count rather than authorize additional deletions.
@@ -858,6 +858,7 @@ struct HistorySettingsView: View {
         .alert("Clear saved recordings?", isPresented: $showClearConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete \(pendingDeletionCount) Recordings", role: .destructive) {
+                guard appState.retryingSessionID == nil else { return }
                 if store.clearableRecordingCount > pendingDeletionCount {
                     pendingDeletionCount = store.clearableRecordingCount
                     DispatchQueue.main.async { showClearConfirmation = true }

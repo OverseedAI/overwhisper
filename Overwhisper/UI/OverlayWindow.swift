@@ -10,6 +10,7 @@ private final class FirstMouseHostingView<Content: View>: NSHostingView<Content>
 class OverlayWindow: NSPanel {
     private let appState: AppState
     private var hostingView: NSHostingView<OverlayView>?
+    private var visibilityGeneration = UUID()
 
     init(appState: AppState, onCancel: @escaping () -> Void) {
         self.appState = appState
@@ -42,6 +43,7 @@ class OverlayWindow: NSPanel {
     }
 
     func show(position: OverlayPosition) {
+        visibilityGeneration = UUID()
         guard let screen = NSScreen.main else { return }
 
         let screenFrame = screen.visibleFrame
@@ -97,15 +99,18 @@ class OverlayWindow: NSPanel {
     }
 
     func showTranscribing() {
-        // The view will automatically update based on appState
+        show(position: appState.overlayPosition)
     }
 
     func hide() {
+        let generation = UUID()
+        visibilityGeneration = generation
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0
         }, completionHandler: {
+            guard self.visibilityGeneration == generation else { return }
             self.orderOut(nil)
         })
     }

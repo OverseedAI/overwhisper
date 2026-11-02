@@ -10,6 +10,41 @@ enum AppEnvironment {
     static let isDevBuild = Bundle.main.bundleIdentifier == nil
 }
 
+/// Engines may finish after cancellation. Only the current operation may deliver
+/// results or finish the shared UI; resource cleanup belongs to each task.
+@MainActor
+final class TranscriptionTaskController {
+    private(set) var currentID: UUID?
+    private(set) var latestID: UUID?
+    private var task: Task<Void, Never>?
+
+    @discardableResult
+    func start(operation: @escaping (UUID) async -> Void, onFinish: @escaping () -> Void) -> Task<Void, Never> {
+        precondition(currentID == nil)
+        let id = UUID()
+        currentID = id
+        latestID = id
+        let task = Task {
+            await operation(id)
+            guard currentID == id else { return }
+            currentID = nil
+            self.task = nil
+            onFinish()
+        }
+        self.task = task
+        return task
+    }
+
+    func isCurrent(_ id: UUID) -> Bool { currentID == id && !Task.isCancelled }
+
+    func cancel() {
+        currentID = nil
+        let cancelled = task
+        task = nil
+        cancelled?.cancel()
+    }
+}
+
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
@@ -38,7 +73,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
-    private var transcriptionTask: Task<Void, Never>?
+    private let transcriptionTasks = TranscriptionTaskController()
     private var escapeKeyMonitor: EscapeKeyMonitor?
     private var errorResetTimer: Timer?
 
@@ -819,8 +854,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startRecording() {
         guard appState.recordingState.isIdle else { return }
+        guard checkTranscriptionPrerequisites() else { return }
         escapeKeyMonitor?.start()
 
+        beginRecording()
+    }
+
+    private func checkTranscriptionPrerequisites() -> Bool {
         // Recording is allowed while the engine is still loading — audio capture
         // doesn't need the model, and transcription waits for initialization.
         // Only block when transcription can never succeed (missing model/key).
@@ -830,7 +870,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let currentModel = appState.whisperModel.rawValue
             if !appState.downloadedModels.contains(currentModel) && !appState.isDownloadingModel {
                 showNoModelAlert()
-                return
+                return false
             }
         }
 
@@ -840,16 +880,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 launchEngineInitialization()
             }
             showNotification(title: "Please Wait", body: "Parakeet model is still loading...")
-            return
+            return false
         }
 
         // Check if OpenAI API key is set when using OpenAI
         if appState.transcriptionEngine == .openAI && appState.openAIAPIKey.isEmpty {
             showNotification(title: "API Key Required", body: "Please set your OpenAI API key in Settings.")
             openSettings()
-            return
+            return false
         }
 
+        return true
+    }
+
+    private func beginRecording() {
         do {
             // Play the start chime (if enabled) before muting.
             var chimeDuration: TimeInterval = 0
@@ -943,15 +987,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.recordingState = .transcribing
         overlayWindow.showTranscribing()
 
-        transcriptionTask = Task {
+        // Finish capture synchronously, before cancellation can start another
+        // recording. A queued task must never stop a newer capture.
+        let capturedAudio = Result { try audioRecorder.stopRecording() }
+        let meanRMS = audioRecorder.meanRMS
+        let peakRMS = audioRecorder.peakRMS
+        transcriptionTasks.start(operation: { [self] operationID in
             let (engineLabel, modelLabel) = currentEngineLabels()
             let language = appState.language
             let started = Date()
 
             do {
-                let url = try audioRecorder.stopRecording()
-                let meanRMS = audioRecorder.meanRMS
-                let peakRMS = audioRecorder.peakRMS
+                let url = try capturedAudio.get()
+                guard transcriptionTasks.isCurrent(operationID) else {
+                    recordCancelledTranscription(
+                        audioURL: url, engine: engineLabel, model: modelLabel,
+                        recordingDuration: recordingDuration, latency: Date().timeIntervalSince(started), language: language,
+                        analyticsEngine: appState.transcriptionEngine.analyticsEngine, analyticsModel: appState.analyticsModel,
+                        operationID: operationID
+                    )
+                    return
+                }
 
                 if appState.skipSilentRecordings && Self.isBelowSilenceThreshold(meanRMS: meanRMS) {
                     let meanDb = AppDelegate.dbFromRMS(meanRMS)
@@ -986,9 +1042,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                await transcribeAndDeliver(audioURL: url, recordingDuration: recordingDuration)
+                await transcribeAndDeliver(audioURL: url, recordingDuration: recordingDuration, operationID: operationID)
 
             } catch {
+                guard transcriptionTasks.isCurrent(operationID) else { return }
                 let latency = Date().timeIntervalSince(started)
                 AppLogger.transcription.error("Failed to stop recording: \(error.localizedDescription)")
 
@@ -1018,7 +1075,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 overlayWindow.hide()
             }
-        }
+        }, onFinish: { [self] in finishTranscriptionUI() })
     }
 
     private func currentEngineLabels() -> (engine: String, model: String) {
@@ -1040,9 +1097,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         /// Normal dictation: record a new session (moving the audio into the
         /// store) and paste the text at the cursor.
         case dictation
-        /// Retry from the History tab: update this session in place (its audio
-        /// stays where it is), copy the text to the clipboard, never paste.
-        case historyRetry(TranscriptionDebugSession)
+        /// Retry a saved recording in place. History copies; the menu pastes.
+        case storedRetry(TranscriptionDebugSession, copyOnly: Bool)
+
+        var analyticsSource: AnalyticsTranscriptionSource {
+            switch self {
+            case .dictation: return .dictation
+            case .storedRetry(_, copyOnly: true): return .historyRetry
+            case .storedRetry(_, copyOnly: false): return .menuRetry
+            }
+        }
     }
 
     /// Transcribes an audio file and delivers the result (history + paste).
@@ -1051,6 +1115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func transcribeAndDeliver(
         audioURL: URL,
         recordingDuration: TimeInterval,
+        operationID: UUID,
         mode: TranscriptionMode = .dictation
     ) async {
         let engineType = appState.transcriptionEngine
@@ -1062,17 +1127,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Recording may have started while the engine was still loading —
         // wait for any in-flight initialization before transcribing.
-        await initializationTask?.value
-        while appState.isInitializingEngine && !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 100_000_000)
+        if transcriptionTasks.isCurrent(operationID) {
+            await initializationTask?.value
+            while appState.isInitializingEngine && !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
         }
 
-        if Task.isCancelled {
+        if !transcriptionTasks.isCurrent(operationID) {
             recordCancelledTranscription(
                 audioURL: audioURL, engine: engineLabel, model: modelLabel,
                 recordingDuration: recordingDuration, latency: Date().timeIntervalSince(started), language: language,
                 analyticsEngine: analyticsEngine, analyticsModel: analyticsModel,
-                mode: mode
+                mode: mode, operationID: operationID
             )
             return
         }
@@ -1088,12 +1155,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Cancelled mid-transcription — discard the result, but keep the
             // audio in the debug store so "Retry Last Transcription" can
             // resurrect a mistaken cancel.
-            if Task.isCancelled {
+            if !transcriptionTasks.isCurrent(operationID) {
                 recordCancelledTranscription(
                     audioURL: audioURL, engine: engineLabel, model: modelLabel,
                     recordingDuration: recordingDuration, latency: latency, language: language,
                     analyticsEngine: analyticsEngine, analyticsModel: analyticsModel,
-                    mode: mode
+                    mode: mode, operationID: operationID
                 )
                 return
             }
@@ -1122,7 +1189,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 recordingDuration: recordingDuration,
                 latency: latency,
                 usedCloudFallback: false,
-                delivery: delivery
+                delivery: delivery,
+                source: mode.analyticsSource
             )
 
             appState.recordingState = .idle
@@ -1131,12 +1199,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             let latency = Date().timeIntervalSince(started)
 
-            if Task.isCancelled || error is CancellationError {
+            if !transcriptionTasks.isCurrent(operationID) || error is CancellationError {
                 recordCancelledTranscription(
                     audioURL: audioURL, engine: engineLabel, model: modelLabel,
                     recordingDuration: recordingDuration, latency: latency, language: language,
                     analyticsEngine: analyticsEngine, analyticsModel: analyticsModel,
-                    mode: mode
+                    mode: mode, operationID: operationID
                 )
                 return
             }
@@ -1149,14 +1217,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 && !appState.openAIAPIKey.isEmpty
 
             if shouldTryFallback {
-                let fallbackSucceeded = await tryCloudFallback(
+                let fallbackResult = await tryCloudFallback(
                     audioURL: audioURL,
                     recordingDuration: recordingDuration,
                     language: language,
                     initialError: error.localizedDescription,
+                    operationID: operationID,
                     mode: mode
                 )
-                if !fallbackSucceeded {
+                guard transcriptionTasks.isCurrent(operationID) else { return }
+                if case .cancelled = fallbackResult { return }
+                if case .failed = fallbackResult {
                     appState.recordingState = .error(error.localizedDescription)
                     appState.lastError = error.localizedDescription
                     if appState.showNotificationOnError {
@@ -1183,7 +1254,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     model: analyticsModel,
                     recordingDuration: recordingDuration,
                     latency: latency,
-                    usedCloudFallback: false
+                    usedCloudFallback: false,
+                    source: mode.analyticsSource
                 )
                 appState.recordingState = .error(error.localizedDescription)
                 appState.lastError = error.localizedDescription
@@ -1197,7 +1269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func deliverTranscription(_ text: String, mode: TranscriptionMode = .dictation) -> AnalyticsDelivery {
-        if case .historyRetry = mode {
+        if case .storedRetry(_, copyOnly: true) = mode {
             guard !text.isEmpty else {
                 showNotification(title: "No Speech Detected", body: "The recording was transcribed again, but no text was recognized.")
                 return .none
@@ -1209,7 +1281,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if appState.playSoundOnCompletion {
                 NSSound(named: .init("Tink"))?.play()
             }
-            showNotification(title: "Transcription Copied", body: Self.menuPreview(for: text))
+            showNotification(title: "Transcription Copied", body: "Text copied to clipboard. Paste it where you need it.")
             return .clipboard
         }
 
@@ -1242,28 +1314,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         language: String,
         analyticsEngine: AnalyticsEngine,
         analyticsModel: String,
-        mode: TranscriptionMode = .dictation
+        mode: TranscriptionMode = .dictation,
+        operationID: UUID
     ) {
-        let session = finalizeAudioFile(
-            url: audioURL,
-            engine: engine,
-            model: model,
-            recordingDuration: recordingDuration,
-            transcribedText: "",
-            latency: latency,
-            language: language,
-            errorMessage: "Cancelled by user",
-            usedCloudFallback: false,
-            mode: mode
-        )
-        rememberFailedSession(session)
+        // Stored retries leave the original result untouched when cancelled.
+        if case .dictation = mode {
+            let session = finalizeAudioFile(
+                url: audioURL,
+                engine: engine,
+                model: model,
+                recordingDuration: recordingDuration,
+                transcribedText: "",
+                latency: latency,
+                language: language,
+                errorMessage: "Cancelled by user",
+                usedCloudFallback: false,
+                mode: mode
+            )
+            if transcriptionTasks.latestID == operationID
+                && (appState.recordingState.isIdle || transcriptionTasks.isCurrent(operationID)) {
+                rememberFailedSession(session)
+            }
+        }
         UsageAnalytics.trackDictation(
             outcome: .cancelled,
             engine: analyticsEngine,
             model: analyticsModel,
             recordingDuration: recordingDuration,
             latency: latency,
-            usedCloudFallback: false
+            usedCloudFallback: false,
+            source: mode.analyticsSource
         )
     }
 
@@ -1271,7 +1351,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rememberFailedSession(_ session: TranscriptionDebugSession) {
         // Retry only works while the audio survives in the debug store
-        guard appState.debugSessionStore.audioURL(for: session) != nil else { return }
+        guard !session.success, appState.debugSessionStore.audioURL(for: session) != nil else { return }
         lastFailedSession = session
         retryMenuItem?.isHidden = false
     }
@@ -1283,61 +1363,59 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func retryLastTranscription() {
         guard appState.recordingState.isIdle else { return }
-
-        guard let session = lastFailedSession,
-              let audioURL = appState.debugSessionStore.acquireAudio(for: session) else {
-            clearFailedSession()
-            showNotification(title: "Retry Unavailable", body: "The audio from the failed transcription is no longer available.")
-            return
-        }
-
-        clearFailedSession()
-        escapeKeyMonitor?.start()
-        appState.recordingState = .transcribing
-        overlayWindow.showTranscribing()
-
-        transcriptionTask = Task {
-            defer { appState.debugSessionStore.releaseAudio(for: session) }
-            await transcribeAndDeliver(audioURL: audioURL, recordingDuration: session.recordingDurationSeconds)
-        }
+        guard let session = lastFailedSession else { return }
+        startStoredRetry(session, copyOnly: false)
     }
 
-    /// Re-transcribes a stored session from the History tab, updating it in place.
+    /// History retries copy; menu retries retain the normal paste behavior.
+    /// Both update the existing row and keep its audio in place.
     private func retrySession(_ session: TranscriptionDebugSession) {
-        guard appState.recordingState.isIdle else { return }
+        startStoredRetry(session, copyOnly: true)
+    }
 
-        guard let audioURL = appState.debugSessionStore.audioURL(for: session) else {
+    private func startStoredRetry(_ requestedSession: TranscriptionDebugSession, copyOnly: Bool) {
+        guard appState.recordingState.isIdle, checkTranscriptionPrerequisites() else { return }
+        let store = appState.debugSessionStore
+        guard let session = store.sessions.first(where: { $0.id == requestedSession.id }),
+              let audio = store.acquireAudio(for: session) else {
+            if lastFailedSession?.id == requestedSession.id { clearFailedSession() }
             showNotification(title: "Retry Unavailable", body: "The audio for this transcription is no longer available.")
             return
         }
 
-        // If this is also the menu's "last failed" session, drop that pointer; it
-        // is re-remembered should the retry fail again.
-        if lastFailedSession?.id == session.id {
-            clearFailedSession()
-        }
-
+        if lastFailedSession?.id == session.id { clearFailedSession() }
+        escapeKeyMonitor?.start()
         appState.retryingSessionID = session.id
         appState.recordingState = .transcribing
         overlayWindow.showTranscribing()
 
-        transcriptionTask = Task {
+        transcriptionTasks.start(operation: { [self] operationID in
+            defer { store.releaseAudio(audio) }
             await transcribeAndDeliver(
-                audioURL: audioURL,
+                audioURL: audio.url,
                 recordingDuration: session.recordingDurationSeconds,
-                mode: .historyRetry(session)
+                operationID: operationID,
+                mode: .storedRetry(session, copyOnly: copyOnly)
             )
-            appState.retryingSessionID = nil
-        }
+        }, onFinish: { [self] in finishTranscriptionUI() })
     }
+
+    private func finishTranscriptionUI() {
+        appState.retryingSessionID = nil
+        if appState.recordingState == .transcribing { appState.recordingState = .idle }
+        overlayWindow.hide()
+    }
+
+    private enum FallbackResult { case succeeded, failed, cancelled }
 
     private func tryCloudFallback(
         audioURL: URL,
         recordingDuration: TimeInterval,
         language: String,
         initialError: String,
+        operationID: UUID,
         mode: TranscriptionMode = .dictation
-    ) async -> Bool {
+    ) async -> FallbackResult {
         showNotification(title: "Fallback", body: "Local transcription failed, trying cloud...")
 
         let started = Date()
@@ -1345,6 +1423,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             let text = try await openAIEngine.transcribe(audioURL: audioURL)
+            guard transcriptionTasks.isCurrent(operationID) else {
+                recordCancelledTranscription(
+                    audioURL: audioURL, engine: "OpenAI API (fallback)", model: "OpenAI whisper-1",
+                    recordingDuration: recordingDuration, latency: Date().timeIntervalSince(started), language: language,
+                    analyticsEngine: .openAI, analyticsModel: "whisper-1", mode: mode, operationID: operationID
+                )
+                return .cancelled
+            }
             let latency = Date().timeIntervalSince(started)
 
             let cleaned = AppDelegate.stripNonSpeechAnnotations(text)
@@ -1371,14 +1457,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 recordingDuration: recordingDuration,
                 latency: latency,
                 usedCloudFallback: true,
-                delivery: delivery
+                delivery: delivery,
+                source: mode.analyticsSource
             )
 
             appState.recordingState = .idle
-            return true
+            return .succeeded
 
         } catch {
             let latency = Date().timeIntervalSince(started)
+            if !transcriptionTasks.isCurrent(operationID) || error is CancellationError {
+                recordCancelledTranscription(
+                    audioURL: audioURL, engine: "OpenAI API (fallback)", model: "OpenAI whisper-1",
+                    recordingDuration: recordingDuration, latency: latency, language: language,
+                    analyticsEngine: .openAI, analyticsModel: "whisper-1", mode: mode, operationID: operationID
+                )
+                return .cancelled
+            }
             AppLogger.transcription.error("Cloud fallback error: \(error.localizedDescription)")
 
             let session = finalizeAudioFile(
@@ -1400,10 +1495,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 model: "whisper-1",
                 recordingDuration: recordingDuration,
                 latency: latency,
-                usedCloudFallback: true
+                usedCloudFallback: true,
+                source: mode.analyticsSource
             )
 
-            return false
+            return .failed
         }
     }
 
@@ -1436,7 +1532,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 usedCloudFallback: usedCloudFallback
             )
 
-        case .historyRetry(let original):
+        case .storedRetry(let original, _):
             // Keep the row (id, timestamp, audio file) and only replace the result.
             let updated = original.withResult(
                 engine: engine,
@@ -1447,8 +1543,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 errorMessage: errorMessage,
                 usedCloudFallback: usedCloudFallback
             )
-            appState.debugSessionStore.update(updated)
-            return updated
+            return appState.debugSessionStore.updateRetry(updated) ?? original
         }
     }
 
@@ -1504,9 +1599,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func cancelTranscription() {
         guard appState.recordingState == .transcribing else { return }
 
-        transcriptionTask?.cancel()
+        transcriptionTasks.cancel()
+        if let id = appState.retryingSessionID,
+           let session = appState.debugSessionStore.sessions.first(where: { $0.id == id }) {
+            rememberFailedSession(session)
+        }
         appState.recordingState = .idle
-        overlayWindow.hide()
+        finishTranscriptionUI()
     }
 
     private func startRecordingLimitTimer() {

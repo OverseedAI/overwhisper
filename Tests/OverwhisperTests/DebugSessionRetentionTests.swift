@@ -423,12 +423,79 @@ final class DebugSessionRetentionTests: XCTestCase {
   func testRetentionDefersDeletionUntilActiveTranscriptionReleasesAudio() throws {
     let seeded = try seed(ages: [TimeInterval(2 * 86_400)])
     let store = makeStore(AudioRetentionPolicy(maxCount: nil, maxAge: nil))
-    XCTAssertNotNil(store.acquireAudio(for: seeded[0]))
+    let lease = try XCTUnwrap(store.acquireAudio(for: seeded[0]))
     store.retentionPolicy = AudioRetentionPolicy(maxCount: nil, maxAge: 86_400)
     XCTAssertTrue(audioExists(seeded[0]))
     XCTAssertEqual(store.sessions.count, 1)
-    store.releaseAudio(for: seeded[0])
+    store.releaseAudio(lease)
     XCTAssertFalse(audioExists(seeded[0]))
     XCTAssertTrue(store.sessions.isEmpty)
   }
+
+  func testFailedOrEmptyRetryPreservesSuccessfulResultAcrossRestart() throws {
+    let original = try seed(ages: [0])[0]
+    let store = makeStore()
+    for error in ["Cancelled by user", "Engine failed", nil] {
+      let attempt = original.withResult(
+        engine: "replacement", model: "replacement", transcribedText: "",
+        latencySeconds: 2, language: "en", errorMessage: error, usedCloudFallback: false)
+      XCTAssertEqual(store.updateRetry(attempt), original)
+      XCTAssertEqual(store.sessions, [original])
+    }
+    XCTAssertEqual(makeStore().sessions, [original])
+  }
+
+  func testSuccessfulRetryReplacesTextWithoutMovingAudio() throws {
+    let original = try seed(ages: [0])[0]
+    let store = makeStore()
+    let attempt = original.withResult(
+      engine: "replacement", model: "replacement", transcribedText: "new text",
+      latencySeconds: 2, language: "en", errorMessage: nil, usedCloudFallback: true)
+    XCTAssertEqual(store.updateRetry(attempt), attempt)
+    XCTAssertEqual(makeStore().sessions, [attempt])
+    XCTAssertTrue(audioExists(original))
+  }
+
+  func testClearAndDeleteCannotRemoveAudioUntilAllReadersReleaseIt() throws {
+    let original = try seed(ages: [0])[0]
+    let store = makeStore()
+    let first = try XCTUnwrap(store.acquireAudio(for: original))
+    let second = try XCTUnwrap(store.acquireAudio(for: original))
+    store.releaseAudio(first)
+    store.releaseAudio(first) // Releasing twice must not retire another reader.
+    store.clear()
+    store.delete(original)
+    XCTAssertTrue(audioExists(original))
+    XCTAssertEqual(store.sessions.count, 1)
+    store.releaseAudio(second)
+    store.clear()
+    XCTAssertFalse(audioExists(original))
+  }
+
+  func testRetrySnapshotDoesNotFollowReplacedSourceAndIsRemovedOnRelease() throws {
+    let original = try seed(ages: [0])[0]
+    let store = makeStore()
+    let lease = try XCTUnwrap(store.acquireAudio(for: original))
+    defer { store.releaseAudio(lease) }
+    let expected = try Data(contentsOf: lease.url)
+    let source = try XCTUnwrap(store.audioURL(for: original))
+    let other = root.appendingPathComponent("other.wav")
+    try Data("different recording".utf8).write(to: other)
+    try FileManager.default.removeItem(at: source)
+    try FileManager.default.createSymbolicLink(at: source, withDestinationURL: other)
+    XCTAssertNil(store.acquireAudio(for: original))
+    XCTAssertEqual(try Data(contentsOf: lease.url), expected)
+    store.releaseAudio(lease)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: lease.url.path))
+    XCTAssertEqual(try Data(contentsOf: other), Data("different recording".utf8))
+  }
+
+  func testRetryRejectsHardLinkedFiles() throws {
+    let original = try seed(ages: [0])[0]
+    let store = makeStore()
+    let source = try XCTUnwrap(store.audioURL(for: original))
+    try FileManager.default.linkItem(at: source, to: root.appendingPathComponent("alias.wav"))
+    XCTAssertNil(store.acquireAudio(for: original))
+  }
+
 }

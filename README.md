@@ -115,6 +115,12 @@ Release builds are arm64-only.
 If Accessibility permission is missing, Overwhisper copies the text to the
 clipboard and tells you to paste manually.
 
+In Settings → History, **Retry** or **Transcribe Again** processes the saved
+recording with your current engine settings and copies the result. The menu's
+**Retry Last Transcription** pastes instead. Both update the existing History
+entry without moving its audio. Failed, cancelled, or empty retries keep any
+previous successful transcript. Press Escape or use the overlay to cancel.
+
 ## Privacy
 
 Overwhisper is local-first.
@@ -128,7 +134,7 @@ Overwhisper is local-first.
   set of recent sessions and includes a Clear All control in Settings.
 - Anonymous usage analytics are optional and off until you choose to share them.
   When enabled, Overwhisper sends app lifecycle events, basic app/device/OS
-  information, model choices, and bucketed dictation outcomes to PostHog through
+  information, model choices, and bucketed dictation and retry outcomes to PostHog through
   Overseed's first-party proxy. An allowlist strips all other event fields. It never
   sends audio, transcribed text, API keys, filenames, other app names, or raw errors.
   You can change this choice at any time in Settings.
