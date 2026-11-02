@@ -7,7 +7,16 @@ import Sparkle
 
 enum AppEnvironment {
     /// True when running outside a real .app bundle (swift run / bare .build binary).
-    static let isDevBuild = Bundle.main.bundleIdentifier == nil
+    static let isDevBuild = Bundle.main.bundleIdentifier == nil || isSettingsPreview
+
+    /// A debug-only settings host for visual review without recording, hotkeys, or engine startup.
+    static var isSettingsPreview: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--settings-preview")
+        #else
+        return false
+        #endif
+    }
 }
 
 @MainActor
@@ -69,6 +78,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if AppEnvironment.isSettingsPreview {
+            NSApp.setActivationPolicy(.regular)
+            audioDeviceManager = AudioDeviceManager()
+            modelManager = ModelManager(appState: appState)
+            openSettings()
+            return
+        }
+
         // Install crash reporter first
         CrashReporter.shared.install()
 
