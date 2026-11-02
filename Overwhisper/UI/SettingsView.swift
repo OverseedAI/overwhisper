@@ -162,7 +162,7 @@ struct GeneralSettingsView: View {
                     Text("YouTube")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Link("@halshin_software", destination: URL(string: "https://www.youtube.com/@halshin_software")!)
+                    Link("@halshin", destination: URL(string: "https://www.youtube.com/@halshin")!)
                 }
             } header: {
                 Text("Support")
