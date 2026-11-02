@@ -76,3 +76,6 @@ jobs:
           APP_PATH="$RUNNER_TEMP/Overwhisper.xcarchive/Products/Applications/Overwhisper.app"
           test "$(lipo -archs "$APP_PATH/Contents/MacOS/Overwhisper")" = arm64
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_PATH/Contents/Info.plist")" = 14.0
+
+      - name: Run regression tests
+        run: swift test --skip-update

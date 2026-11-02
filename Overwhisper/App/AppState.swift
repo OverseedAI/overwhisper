@@ -271,34 +271,34 @@ class AppState: ObservableObject {
 
     // Settings
     @Published var recordingMode: RecordingMode {
-        didSet { UserDefaults.standard.set(recordingMode.rawValue, forKey: "recordingMode") }
+        didSet { defaults.set(recordingMode.rawValue, forKey: "recordingMode") }
     }
     @Published var overlayPosition: OverlayPosition {
-        didSet { UserDefaults.standard.set(overlayPosition.rawValue, forKey: "overlayPosition") }
+        didSet { defaults.set(overlayPosition.rawValue, forKey: "overlayPosition") }
     }
     @Published var transcriptionEngine: TranscriptionEngineType {
-        didSet { UserDefaults.standard.set(transcriptionEngine.rawValue, forKey: "transcriptionEngine") }
+        didSet { defaults.set(transcriptionEngine.rawValue, forKey: "transcriptionEngine") }
     }
     @Published var whisperModel: WhisperModel {
-        didSet { UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel") }
+        didSet { defaults.set(whisperModel.rawValue, forKey: "whisperModel") }
     }
     @Published var parakeetModel: ParakeetModelType {
-        didSet { UserDefaults.standard.set(parakeetModel.rawValue, forKey: "parakeetModel") }
+        didSet { defaults.set(parakeetModel.rawValue, forKey: "parakeetModel") }
     }
     @Published var language: String {
-        didSet { UserDefaults.standard.set(language, forKey: "language") }
+        didSet { defaults.set(language, forKey: "language") }
     }
     @Published var translateToEnglish: Bool {
-        didSet { UserDefaults.standard.set(translateToEnglish, forKey: "translateToEnglish") }
+        didSet { defaults.set(translateToEnglish, forKey: "translateToEnglish") }
     }
     @Published var enableCloudFallback: Bool {
-        didSet { UserDefaults.standard.set(enableCloudFallback, forKey: "enableCloudFallback") }
+        didSet { defaults.set(enableCloudFallback, forKey: "enableCloudFallback") }
     }
     @Published var customVocabulary: String {
-        didSet { UserDefaults.standard.set(customVocabulary, forKey: "customVocabulary") }
+        didSet { defaults.set(customVocabulary, forKey: "customVocabulary") }
     }
     @Published var textReplacements: String {
-        didSet { UserDefaults.standard.set(textReplacements, forKey: "textReplacements") }
+        didSet { defaults.set(textReplacements, forKey: "textReplacements") }
     }
     @Published var openAIAPIKey: String {
         didSet {
@@ -306,52 +306,65 @@ class AppState: ObservableObject {
         }
     }
     @Published var playSoundOnCompletion: Bool {
-        didSet { UserDefaults.standard.set(playSoundOnCompletion, forKey: "playSoundOnCompletion") }
+        didSet { defaults.set(playSoundOnCompletion, forKey: "playSoundOnCompletion") }
     }
     @Published var playSoundOnStart: Bool {
-        didSet { UserDefaults.standard.set(playSoundOnStart, forKey: "playSoundOnStart") }
+        didSet { defaults.set(playSoundOnStart, forKey: "playSoundOnStart") }
     }
     @Published var showNotificationOnError: Bool {
-        didSet { UserDefaults.standard.set(showNotificationOnError, forKey: "showNotificationOnError") }
+        didSet { defaults.set(showNotificationOnError, forKey: "showNotificationOnError") }
     }
     @Published var muteSystemAudioWhileRecording: Bool {
-        didSet { UserDefaults.standard.set(muteSystemAudioWhileRecording, forKey: "muteSystemAudioWhileRecording") }
+        didSet { defaults.set(muteSystemAudioWhileRecording, forKey: "muteSystemAudioWhileRecording") }
     }
     @Published var skipSilentRecordings: Bool {
-        didSet { UserDefaults.standard.set(skipSilentRecordings, forKey: "skipSilentRecordings") }
+        didSet { defaults.set(skipSilentRecordings, forKey: "skipSilentRecordings") }
     }
     @Published var selectedInputDeviceUID: String {
-        didSet { UserDefaults.standard.set(selectedInputDeviceUID, forKey: "selectedInputDeviceUID") }
+        didSet { defaults.set(selectedInputDeviceUID, forKey: "selectedInputDeviceUID") }
     }
     @Published var recordingDurationLimitEnabled: Bool {
-        didSet { UserDefaults.standard.set(recordingDurationLimitEnabled, forKey: "recordingDurationLimitEnabled") }
+        didSet { defaults.set(recordingDurationLimitEnabled, forKey: "recordingDurationLimitEnabled") }
     }
     @Published var recordingDurationLimitSeconds: Int {
-        didSet { UserDefaults.standard.set(recordingDurationLimitSeconds, forKey: "recordingDurationLimitSeconds") }
+        didSet { defaults.set(recordingDurationLimitSeconds, forKey: "recordingDurationLimitSeconds") }
+    }
+    // One publication prevents transient combinations from deleting extra audio.
+    @Published var audioRetentionPolicy: AudioRetentionPolicy {
+        didSet {
+            defaults.set(audioRetentionAge.rawValue, forKey: "audioRetentionAge")
+            defaults.set(audioRetentionMaxCount.rawValue, forKey: "audioRetentionMaxCount")
+        }
+    }
+    var audioRetentionAge: AudioRetentionAge {
+        AudioRetentionAge.allCases.first { $0.maxAge == audioRetentionPolicy.maxAge } ?? .never
+    }
+    var audioRetentionMaxCount: AudioRetentionCount {
+        AudioRetentionCount.allCases.first { $0.limit == audioRetentionPolicy.maxCount } ?? .thirty
     }
     @Published var startAtLogin: Bool {
         didSet {
-            UserDefaults.standard.set(startAtLogin, forKey: "startAtLogin")
-            LaunchAtLogin.isEnabled = startAtLogin
+            defaults.set(startAtLogin, forKey: "startAtLogin")
+            updateLoginItem(startAtLogin)
         }
     }
     @Published var hasCompletedOnboarding: Bool {
-        didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
+        didSet { defaults.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
     }
     @Published var analyticsEnabled: Bool {
-        didSet { UserDefaults.standard.set(analyticsEnabled, forKey: Self.analyticsEnabledKey) }
+        didSet { defaults.set(analyticsEnabled, forKey: Self.analyticsEnabledKey) }
     }
     @Published var toggleHotkeyConfig: HotkeyConfig {
         didSet {
             if let data = try? JSONEncoder().encode(toggleHotkeyConfig) {
-                UserDefaults.standard.set(data, forKey: "toggleHotkeyConfig")
+                defaults.set(data, forKey: "toggleHotkeyConfig")
             }
         }
     }
     @Published var pushToTalkHotkeyConfig: HotkeyConfig {
         didSet {
             if let data = try? JSONEncoder().encode(pushToTalkHotkeyConfig) {
-                UserDefaults.standard.set(data, forKey: "pushToTalkHotkeyConfig")
+                defaults.set(data, forKey: "pushToTalkHotkeyConfig")
             }
         }
     }
@@ -370,7 +383,7 @@ class AppState: ObservableObject {
     @Published var downloadedModels: Set<String> = []
     @Published var parakeetDownloadedModels: Set<String> {
         didSet {
-            UserDefaults.standard.set(Array(parakeetDownloadedModels), forKey: "parakeetDownloadedModels")
+            defaults.set(Array(parakeetDownloadedModels), forKey: "parakeetDownloadedModels")
         }
     }
     @Published var currentlyDownloadingModel: String?
@@ -382,7 +395,9 @@ class AppState: ObservableObject {
         didSet { persistTranscriptionHistory() }
     }
 
-    let debugSessionStore = DebugSessionStore()
+    let debugSessionStore: DebugSessionStore
+    private let defaults: UserDefaults
+    private let updateLoginItem: (Bool) -> Void
 
     // Hotkey recording state - tracks which recorder is active (nil if none)
     @Published var activeHotkeyRecorder: String?
@@ -415,57 +430,67 @@ class AppState: ObservableObject {
     private var hasHeardAudio = false
     private var micProvenHealthy = false
 
-    init() {
+    init(
+        defaults: UserDefaults = .standard,
+        debugSessionStore: DebugSessionStore? = nil,
+        loadAPIKey: () -> String? = {
+            guard let data = try? KeychainHelper.load(key: "openAIAPIKey") else { return nil }
+            return String(data: data, encoding: .utf8)
+        },
+        updateLoginItem: @escaping (Bool) -> Void = { LaunchAtLogin.isEnabled = $0 }
+    ) {
+        self.defaults = defaults
+        self.debugSessionStore = debugSessionStore ?? DebugSessionStore()
+        self.updateLoginItem = updateLoginItem
         // Load settings from UserDefaults
-        let modeStr = UserDefaults.standard.string(forKey: "recordingMode") ?? RecordingMode.toggle.rawValue
+        let modeStr = defaults.string(forKey: "recordingMode") ?? RecordingMode.toggle.rawValue
         self.recordingMode = RecordingMode(rawValue: modeStr) ?? .toggle
 
-        let posStr = UserDefaults.standard.string(forKey: "overlayPosition") ?? OverlayPosition.bottomRight.rawValue
+        let posStr = defaults.string(forKey: "overlayPosition") ?? OverlayPosition.bottomRight.rawValue
         self.overlayPosition = OverlayPosition(rawValue: posStr) ?? .bottomRight
 
-        let engineStr = UserDefaults.standard.string(forKey: "transcriptionEngine") ?? TranscriptionEngineType.whisperKit.rawValue
+        let engineStr = defaults.string(forKey: "transcriptionEngine") ?? TranscriptionEngineType.whisperKit.rawValue
         self.transcriptionEngine = TranscriptionEngineType(rawValue: engineStr) ?? .whisperKit
 
-        let modelStr = UserDefaults.standard.string(forKey: "whisperModel") ?? WhisperModel.smallEn.rawValue
+        let modelStr = defaults.string(forKey: "whisperModel") ?? WhisperModel.smallEn.rawValue
         self.whisperModel = WhisperModel(rawValue: modelStr) ?? .smallEn
 
-        let parakeetModelStr = UserDefaults.standard.string(forKey: "parakeetModel") ?? ParakeetModelType.v3Multilingual.rawValue
+        let parakeetModelStr = defaults.string(forKey: "parakeetModel") ?? ParakeetModelType.v3Multilingual.rawValue
         self.parakeetModel = ParakeetModelType(rawValue: parakeetModelStr) ?? .v3Multilingual
 
-        let storedParakeetDownloads = UserDefaults.standard.stringArray(forKey: "parakeetDownloadedModels") ?? []
+        let storedParakeetDownloads = defaults.stringArray(forKey: "parakeetDownloadedModels") ?? []
         self.parakeetDownloadedModels = Set(storedParakeetDownloads)
 
-        self.language = UserDefaults.standard.string(forKey: "language") ?? "auto"
-        self.translateToEnglish = UserDefaults.standard.bool(forKey: "translateToEnglish")
-        self.enableCloudFallback = UserDefaults.standard.bool(forKey: "enableCloudFallback")
-        self.customVocabulary = UserDefaults.standard.string(forKey: "customVocabulary") ?? ""
-        self.textReplacements = UserDefaults.standard.string(forKey: "textReplacements") ?? ""
+        self.language = defaults.string(forKey: "language") ?? "auto"
+        self.translateToEnglish = defaults.bool(forKey: "translateToEnglish")
+        self.enableCloudFallback = defaults.bool(forKey: "enableCloudFallback")
+        self.customVocabulary = defaults.string(forKey: "customVocabulary") ?? ""
+        self.textReplacements = defaults.string(forKey: "textReplacements") ?? ""
 
-        if let apiKeyData = try? KeychainHelper.load(key: "openAIAPIKey"),
-           let apiKey = String(data: apiKeyData, encoding: .utf8) {
-            self.openAIAPIKey = apiKey
-        } else {
-            self.openAIAPIKey = ""
-        }
+        self.openAIAPIKey = loadAPIKey() ?? ""
 
-        self.playSoundOnCompletion = UserDefaults.standard.object(forKey: "playSoundOnCompletion") as? Bool ?? true
-        self.playSoundOnStart = UserDefaults.standard.bool(forKey: "playSoundOnStart")
-        self.showNotificationOnError = UserDefaults.standard.object(forKey: "showNotificationOnError") as? Bool ?? true
-        self.muteSystemAudioWhileRecording = UserDefaults.standard.bool(forKey: "muteSystemAudioWhileRecording")
-        self.skipSilentRecordings = UserDefaults.standard.object(forKey: "skipSilentRecordings") as? Bool ?? true
-        self.selectedInputDeviceUID = UserDefaults.standard.string(forKey: "selectedInputDeviceUID") ?? ""
-        self.recordingDurationLimitEnabled = UserDefaults.standard.bool(forKey: "recordingDurationLimitEnabled")
-        let storedLimit = UserDefaults.standard.integer(forKey: "recordingDurationLimitSeconds")
+        self.playSoundOnCompletion = defaults.object(forKey: "playSoundOnCompletion") as? Bool ?? true
+        self.playSoundOnStart = defaults.bool(forKey: "playSoundOnStart")
+        self.showNotificationOnError = defaults.object(forKey: "showNotificationOnError") as? Bool ?? true
+        self.muteSystemAudioWhileRecording = defaults.bool(forKey: "muteSystemAudioWhileRecording")
+        self.skipSilentRecordings = defaults.object(forKey: "skipSilentRecordings") as? Bool ?? true
+        self.selectedInputDeviceUID = defaults.string(forKey: "selectedInputDeviceUID") ?? ""
+        self.recordingDurationLimitEnabled = defaults.bool(forKey: "recordingDurationLimitEnabled")
+        let storedLimit = defaults.integer(forKey: "recordingDurationLimitSeconds")
         self.recordingDurationLimitSeconds = storedLimit > 0 ? storedLimit : 60
-        self.startAtLogin = UserDefaults.standard.bool(forKey: "startAtLogin")
-        self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        self.analyticsEnabled = UserDefaults.standard.object(forKey: Self.analyticsEnabledKey) as? Bool ?? false
+        let age = AudioRetentionAge(rawValue: defaults.string(forKey: "audioRetentionAge") ?? "") ?? .never
+        let count = (defaults.object(forKey: "audioRetentionMaxCount") as? Int)
+            .flatMap(AudioRetentionCount.init(rawValue:)) ?? .thirty
+        self.audioRetentionPolicy = AudioRetentionPolicy(maxCount: count.limit, maxAge: age.maxAge)
+        self.startAtLogin = defaults.bool(forKey: "startAtLogin")
+        self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
+        self.analyticsEnabled = defaults.object(forKey: Self.analyticsEnabledKey) as? Bool ?? false
 
         // Load toggle hotkey (with migration from legacy hotkeyConfig)
-        if let hotkeyData = UserDefaults.standard.data(forKey: "toggleHotkeyConfig"),
+        if let hotkeyData = defaults.data(forKey: "toggleHotkeyConfig"),
            let config = try? JSONDecoder().decode(HotkeyConfig.self, from: hotkeyData) {
             self.toggleHotkeyConfig = config
-        } else if let legacyData = UserDefaults.standard.data(forKey: "hotkeyConfig"),
+        } else if let legacyData = defaults.data(forKey: "hotkeyConfig"),
                   let legacyConfig = try? JSONDecoder().decode(HotkeyConfig.self, from: legacyData) {
             // Migrate from legacy single hotkey
             self.toggleHotkeyConfig = legacyConfig
@@ -474,22 +499,25 @@ class AppState: ObservableObject {
         }
 
         // Load push-to-talk hotkey
-        if let hotkeyData = UserDefaults.standard.data(forKey: "pushToTalkHotkeyConfig"),
+        if let hotkeyData = defaults.data(forKey: "pushToTalkHotkeyConfig"),
            let config = try? JSONDecoder().decode(HotkeyConfig.self, from: hotkeyData) {
             self.pushToTalkHotkeyConfig = config
         } else {
             self.pushToTalkHotkeyConfig = .defaultPushToTalk
         }
 
-        UserDefaults.standard.removeObject(forKey: "debugModeEnabled")
+        defaults.removeObject(forKey: "debugModeEnabled")
 
-        if let historyData = UserDefaults.standard.data(forKey: transcriptionHistoryKey),
+        if let historyData = defaults.data(forKey: transcriptionHistoryKey),
            let history = try? JSONDecoder().decode([TranscriptionHistoryEntry].self, from: historyData) {
             self.transcriptionHistory = history
             self.lastTranscription = history.first?.text ?? ""
         } else {
             self.transcriptionHistory = []
         }
+        // Establish the saved policy before any activation/wake callback can
+        // reconcile history with the store's initial default.
+        self.debugSessionStore.retentionPolicy = self.audioRetentionPolicy
     }
 
     func startRecordingTimer() {
@@ -613,6 +641,7 @@ class AppState: ObservableObject {
         selectedInputDeviceUID = ""
         recordingDurationLimitEnabled = false
         recordingDurationLimitSeconds = 60
+        // Retention preferences are deliberately preserved with recording history.
         startAtLogin = false
         analyticsEnabled = false
         toggleHotkeyConfig = .defaultToggle
@@ -620,16 +649,16 @@ class AppState: ObservableObject {
     }
 
     var hasChosenAnalyticsPreference: Bool {
-        UserDefaults.standard.object(forKey: Self.analyticsEnabledKey) != nil
+        defaults.object(forKey: Self.analyticsEnabledKey) != nil
     }
 
     func confirmAnalyticsPreference() {
-        UserDefaults.standard.set(analyticsEnabled, forKey: Self.analyticsEnabledKey)
+        defaults.set(analyticsEnabled, forKey: Self.analyticsEnabledKey)
     }
 
     private func persistTranscriptionHistory() {
         if let data = try? JSONEncoder().encode(transcriptionHistory) {
-            UserDefaults.standard.set(data, forKey: transcriptionHistoryKey)
+            defaults.set(data, forKey: transcriptionHistoryKey)
         }
     }
 

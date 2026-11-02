@@ -2,6 +2,122 @@ import AppKit
 import Carbon.HIToolbox
 import HotKey
 
+/// Decides which parts of an Escape press belong to dictation cancellation.
+/// Keep swallowing repeats and key-up after cancellation makes the app idle.
+struct EscapeKeyGate {
+    enum Decision: Equatable {
+        case passThrough
+        case consume
+        case cancelAndConsume
+    }
+
+    private var swallowingPress = false
+
+    mutating func handle(keyCode: Int64, isKeyDown: Bool, isRepeat: Bool, isActive: Bool) -> Decision {
+        guard keyCode == 53 else { return .passThrough }
+
+        if !isKeyDown {
+            let consume = swallowingPress
+            swallowingPress = false
+            return consume ? .consume : .passThrough
+        }
+        if isRepeat {
+            return swallowingPress ? .consume : .passThrough
+        }
+
+        // A fresh press also recovers from a key-up missed while a tap was disabled.
+        swallowingPress = isActive
+        return isActive ? .cancelAndConsume : .passThrough
+    }
+}
+
+/// Unlike NSEvent's global monitor, an active event tap can stop Escape before
+/// the foreground application receives it. The callback runs on the main loop.
+@MainActor
+final class EscapeKeyMonitor {
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+    private var gate = EscapeKeyGate()
+    private let isActive: () -> Bool
+    private let onCancel: () -> Void
+
+    init(isActive: @escaping () -> Bool, onCancel: @escaping () -> Void) {
+        self.isActive = isActive
+        self.onCancel = onCancel
+    }
+
+    func start() {
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: true)
+            return
+        }
+        let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue)
+            | (CGEventMask(1) << CGEventType.keyUp.rawValue)
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: { _, type, event, context in
+                guard let context else { return Unmanaged.passUnretained(event) }
+                return MainActor.assumeIsolated {
+                    let monitor = Unmanaged<EscapeKeyMonitor>.fromOpaque(context).takeUnretainedValue()
+                    return monitor.handle(type: type, event: event)
+                }
+            },
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            AppLogger.hotkey.error("Unable to install Escape guard; check Accessibility permission")
+            return
+        }
+        guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
+            CFMachPortInvalidate(tap)
+            return
+        }
+        eventTap = tap
+        runLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    func stop() {
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+            CFMachPortInvalidate(eventTap)
+        }
+        if let runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        }
+        eventTap = nil
+        runLoopSource = nil
+        gate = EscapeKeyGate()
+    }
+
+    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
+            return Unmanaged.passUnretained(event)
+        }
+        guard type == .keyDown || type == .keyUp else { return Unmanaged.passUnretained(event) }
+        let decision = gate.handle(
+            keyCode: event.getIntegerValueField(.keyboardEventKeycode),
+            isKeyDown: type == .keyDown,
+            isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+            isActive: isActive()
+        )
+        switch decision {
+        case .passThrough:
+            return Unmanaged.passUnretained(event)
+        case .consume:
+            return nil
+        case .cancelAndConsume:
+            // Return promptly so cancellation work cannot time out the event tap.
+            DispatchQueue.main.async { [weak self] in self?.onCancel() }
+            return nil
+        }
+    }
+}
+
 enum HotkeyEvent {
     case keyDown
     case keyUp
