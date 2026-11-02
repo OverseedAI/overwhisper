@@ -101,6 +101,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        appState.debugSessionStore.retryCleanup()
         // Accessibility may have been granted in System Settings after launch.
         escapeKeyMonitor?.start()
     }
@@ -137,7 +138,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleSystemDidWake(_ notification: Notification) {
-        // Reset the audio engine to ensure it's ready after wake
+        // Reconcile elapsed retention deadlines after sleep and clock changes.
+        appState.debugSessionStore.retryCleanup()
         audioRecorder.resetAudioEngine()
     }
 
@@ -415,6 +417,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak self] _ in
                 self?.refreshRecordingLimitTimer()
+            }
+            .store(in: &cancellables)
+
+        // Replay the saved policy atomically at launch and after confirmation.
+        appState.$audioRetentionPolicy
+            .sink { [weak self] policy in
+                self?.appState.debugSessionStore.retentionPolicy = policy
             }
             .store(in: &cancellables)
 
@@ -1221,7 +1230,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard appState.recordingState.isIdle else { return }
 
         guard let session = lastFailedSession,
-              let audioURL = appState.debugSessionStore.audioURL(for: session) else {
+              let audioURL = appState.debugSessionStore.acquireAudio(for: session) else {
             clearFailedSession()
             showNotification(title: "Retry Unavailable", body: "The audio from the failed transcription is no longer available.")
             return
@@ -1233,6 +1242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWindow.showTranscribing()
 
         transcriptionTask = Task {
+            defer { appState.debugSessionStore.releaseAudio(for: session) }
             await transcribeAndDeliver(audioURL: audioURL, recordingDuration: session.recordingDurationSeconds)
         }
     }
