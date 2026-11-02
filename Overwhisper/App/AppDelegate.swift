@@ -1228,6 +1228,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         clearFailedSession()
+        escapeKeyMonitor?.start()
         appState.recordingState = .transcribing
         overlayWindow.showTranscribing()
 
