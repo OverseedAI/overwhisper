@@ -245,6 +245,7 @@ final class DebugSessionStore: ObservableObject {
   ) -> TranscriptionDebugSession {
     let id = UUID()
     var name: String?
+    var storageError: String?
     var size: Int64?
     var duration: Double?
     if !metadataUnavailable, let source = sourceAudioURL {
@@ -256,7 +257,7 @@ final class DebugSessionStore: ObservableObject {
         size = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value
         duration = Self.duration(of: destination)
       } catch {
-        cleanupError = "Could not save recording audio. Existing recordings have been preserved."
+        storageError = "Could not save recording audio. Existing recordings have been preserved."
         AppLogger.app.error("DebugSessionStore: could not store audio: \(error.localizedDescription)")
       }
     }
@@ -270,6 +271,7 @@ final class DebugSessionStore: ObservableObject {
     guard !metadataUnavailable else { return session }
     sessions.insert(session, at: 0)
     applyRetention()
+    if let storageError, cleanupError == nil { cleanupError = storageError }
     return session
   }
 

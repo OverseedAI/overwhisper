@@ -175,6 +175,35 @@ final class DebugSessionRetentionTests: XCTestCase {
     XCTAssertEqual(store.sessions.first?.id, recorded.id)
   }
 
+  func testRecordKeepsAudioStorageFailureVisibleAfterRetention() throws {
+    try seed(ages: [], audio: false)
+    let store = makeStore()
+
+    let recorded = store.record(
+      engine: "test", model: "test", sourceAudioURL: root.appendingPathComponent("missing.wav"),
+      recordingDuration: 1, transcribedText: "new", latencySeconds: 0.1, language: nil,
+      errorMessage: nil, usedCloudFallback: false)
+
+    XCTAssertNil(recorded.audioFileName)
+    XCTAssertEqual(store.cleanupError, "Could not save recording audio. Existing recordings have been preserved.")
+    let reloaded = makeStore()
+    XCTAssertEqual(reloaded.sessions.map(\.id), [recorded.id])
+  }
+
+  func testRecordPreservesRetentionErrorWhenAudioStorageAlsoFails() throws {
+    try seed(ages: [], audio: false)
+    let store = DebugSessionStore(
+      rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} },
+      writeMetadata: { _, _ in throw CocoaError(.fileWriteNoPermission) })
+
+    _ = store.record(
+      engine: "test", model: "test", sourceAudioURL: root.appendingPathComponent("missing.wav"),
+      recordingDuration: 1, transcribedText: "new", latencySeconds: 0.1, language: nil,
+      errorMessage: nil, usedCloudFallback: false)
+
+    XCTAssertEqual(store.cleanupError, "Could not save history changes. Cleanup will retry; existing metadata is preserved.")
+  }
+
   // MARK: - Disk usage
 
   func testTotalAudioBytesTracksFilesOnDisk() throws {
