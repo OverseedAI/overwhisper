@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   site-analytics:
     runs-on: ubuntu-latest
@@ -34,6 +37,12 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Report toolchain
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+          test "$(uname -m)" = arm64
+
       - name: Build
         run: |
           xcodebuild -project Overwhisper.xcodeproj \
@@ -42,21 +51,30 @@ jobs:
             -destination "platform=macOS,arch=arm64" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
             build
 
-      - name: Build Release (unsigned)
+      - name: Archive Release (unsigned)
         run: |
           xcodebuild -project Overwhisper.xcodeproj \
             -scheme Overwhisper \
             -configuration Release \
-            -destination "platform=macOS,arch=arm64" \
+            -destination "generic/platform=macOS" \
+            -archivePath "$RUNNER_TEMP/Overwhisper.xcarchive" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
-            build
+            archive
+
+      - name: Verify archived app
+        run: |
+          APP_PATH="$RUNNER_TEMP/Overwhisper.xcarchive/Products/Applications/Overwhisper.app"
+          test "$(lipo -archs "$APP_PATH/Contents/MacOS/Overwhisper")" = arm64
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_PATH/Contents/Info.plist")" = 14.0
 
       - name: Run regression tests
         run: swift test --skip-update
