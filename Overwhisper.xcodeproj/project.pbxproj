@@ -256,7 +256,7 @@
 				681EAAEEFA2C695A3644ED8D /* XCRemoteSwiftPackageReference "HotKey" */,
 				7AC963A5E517E8B1FF91277C /* XCRemoteSwiftPackageReference "posthog-ios" */,
 				A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
+				2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A9655F50E434AEEB255A265D /* Products */;
@@ -493,12 +493,12 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+		2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift.git";
+			repositoryURL = "https://github.com/argmaxinc/WhisperKit.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.1.0;
+				minimumVersion = 0.9.0;
 			};
 		};
 		681EAAEEFA2C695A3644ED8D /* XCRemoteSwiftPackageReference "HotKey" */ = {
@@ -548,7 +548,7 @@
 		};
 		761523080B992A3D3E66DE0D /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			package = 2BAA0FDEAA6575D5BBE81515 /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = WhisperKit;
 		};
 		9A4FF0B4B24B9C3208107118 /* HotKey */ = {
