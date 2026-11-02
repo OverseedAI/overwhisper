@@ -13,7 +13,7 @@ env:
 
 jobs:
   upload:
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout
@@ -22,7 +22,8 @@ jobs:
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          # Keep the last successful macOS 14 toolchain during the runner migration.
+          xcode-version: "16.2"
 
       - name: Import Code Signing Certificate
         env:
