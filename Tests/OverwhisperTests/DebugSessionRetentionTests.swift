@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 
 @testable import Overwhisper
 
@@ -71,7 +72,7 @@ final class DebugSessionRetentionTests: XCTestCase {
   }
 
   private func makeStore(_ policy: AudioRetentionPolicy = .default) -> DebugSessionStore {
-    let store = DebugSessionStore(rootDirectory: root)
+    let store = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} })
     store.retentionPolicy = policy
     return store
   }
@@ -145,9 +146,9 @@ final class DebugSessionRetentionTests: XCTestCase {
   }
 
   func testSettingPolicyPrunesImmediatelyAndPersists() throws {
-    // The policy setter uses the wall clock, so seed ages relative to it.
-    let seeded = try seed(ages: [60, 2 * 86_400, 400 * 86_400], relativeTo: Date())
-    let store = DebugSessionStore(rootDirectory: root)
+    // Policy assignment and explicit pruning share the same injected clock.
+    let seeded = try seed(ages: [60, 2 * 86_400, 400 * 86_400], relativeTo: now)
+    let store = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} })
     XCTAssertEqual(store.sessions.count, 3)
 
     store.retentionPolicy = AudioRetentionPolicy(maxCount: 30, maxAge: 365 * 86_400)
@@ -156,7 +157,7 @@ final class DebugSessionRetentionTests: XCTestCase {
     XCTAssertFalse(audioExists(seeded[2]))
 
     // A fresh store reading the same directory sees the pruned list.
-    let reloaded = DebugSessionStore(rootDirectory: root)
+    let reloaded = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} })
     XCTAssertEqual(reloaded.sessions.map(\.id), [seeded[0].id, seeded[1].id])
   }
 
@@ -188,5 +189,217 @@ final class DebugSessionRetentionTests: XCTestCase {
 
     store.clear()
     XCTAssertEqual(store.totalAudioBytes, 512)
+  }
+
+  func testClearDoesNotFollowMetadataOutsideAudioDirectory() throws {
+    try seed(ages: [0])
+    let metadataURL = root.appendingPathComponent("sessions.json")
+    var metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: metadataURL)) as? [[String: Any]])
+    metadata[0]["audioFileName"] = "../victim.txt"
+    try JSONSerialization.data(withJSONObject: metadata).write(to: metadataURL)
+    let victim = root.appendingPathComponent("victim.txt")
+    try Data("must survive".utf8).write(to: victim)
+
+    let store = makeStore(AudioRetentionPolicy(maxCount: nil, maxAge: nil))
+    store.clear()
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: victim.path))
+    XCTAssertEqual(store.sessions.count, 1, "An unsafe deletion must remain tracked")
+  }
+
+  func testClearDoesNotRecursivelyDeleteDirectoryMasqueradingAsRecording() throws {
+    let seeded = try seed(ages: [0], audio: false)
+    let metadataURL = root.appendingPathComponent("sessions.json")
+    var metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: metadataURL)) as? [[String: Any]])
+    let name = "\(seeded[0].id.uuidString).wav"
+    metadata[0]["audioFileName"] = name
+    try JSONSerialization.data(withJSONObject: metadata).write(to: metadataURL)
+    let directory = root.appendingPathComponent("audio").appendingPathComponent(name)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    try Data("must survive".utf8).write(to: directory.appendingPathComponent("victim.txt"))
+
+    let store = makeStore(AudioRetentionPolicy(maxCount: nil, maxAge: nil))
+    store.clear()
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: directory.path))
+    XCTAssertEqual(store.sessions.count, 1)
+  }
+
+  func testDeletionFailureRemainsTrackedAcrossRestartAndRetries() throws {
+    let seeded = try seed(ages: [2 * 86_400])
+    var failRemoval = true
+    let store = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} }, removeFile: { url in
+      if failRemoval { throw CocoaError(.fileWriteNoPermission) }
+      try FileManager.default.removeItem(at: url)
+    })
+    store.retentionPolicy = AudioRetentionPolicy(maxCount: nil, maxAge: 86_400)
+    XCTAssertEqual(store.sessions.map(\.id), seeded.map(\.id))
+    XCTAssertTrue(audioExists(seeded[0]))
+    XCTAssertNotNil(store.cleanupError)
+    XCTAssertEqual(makeStore().sessions.count, 1)
+
+    failRemoval = false
+    store.retryCleanup()
+    XCTAssertTrue(store.sessions.isEmpty)
+    XCTAssertFalse(audioExists(seeded[0]))
+    XCTAssertNil(store.cleanupError)
+  }
+
+  func testMetadataWriteFailureIsVisibleAndRetryable() throws {
+    let seeded = try seed(ages: [0])
+    var failWrite = true
+    let store = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} }, writeMetadata: { data, url in
+      if failWrite { throw CocoaError(.fileWriteNoPermission) }
+      try data.write(to: url, options: .atomic)
+    })
+    store.clear()
+    XCTAssertNotNil(store.cleanupError)
+    XCTAssertFalse(audioExists(seeded[0]))
+    failWrite = false
+    store.retryCleanup()
+    XCTAssertNil(store.cleanupError)
+    XCTAssertTrue(makeStore().sessions.isEmpty)
+  }
+
+  func testScheduledExpirationRunsWithoutRecordingOrChangingSettings() throws {
+    let seeded = try seed(ages: [60, 120])
+    var instant = now
+    var scheduled: (@MainActor () -> Void)?
+    var deadline: Date?
+    let store = DebugSessionStore(rootDirectory: root, clock: { instant }, schedule: { date, action in
+      deadline = date
+      scheduled = action
+      return {}
+    })
+    store.retentionPolicy = AudioRetentionPolicy(maxCount: nil, maxAge: 86_400)
+    XCTAssertEqual(deadline, seeded[1].timestamp.addingTimeInterval(86_400))
+    instant = try XCTUnwrap(deadline)
+    scheduled?()
+    XCTAssertEqual(store.sessions.map(\.id), [seeded[0].id])
+    XCTAssertFalse(audioExists(seeded[1]))
+    XCTAssertEqual(deadline, seeded[0].timestamp.addingTimeInterval(86_400))
+
+    store.retentionPolicy = AudioRetentionPolicy(maxCount: nil, maxAge: nil)
+    XCTAssertNil(store.nextRetentionDate)
+  }
+
+  func testWakeReconciliationExpiresAudioAfterClockJump() throws {
+    let seeded = try seed(ages: [60])
+    var instant = now
+    let store = DebugSessionStore(rootDirectory: root, clock: { instant }, schedule: { _, _ in {} })
+    store.retentionPolicy = AudioRetentionPolicy(maxCount: nil, maxAge: 86_400)
+    instant = instant.addingTimeInterval(2 * 86_400)
+    store.retryCleanup()
+    XCTAssertTrue(store.sessions.isEmpty)
+    XCTAssertFalse(audioExists(seeded[0]))
+  }
+
+  func testCorruptMetadataIsPreservedAndNeverTriggersOrphanSweep() throws {
+    let seeded = try seed(ages: [10 * 86_400])
+    let metadataURL = root.appendingPathComponent("sessions.json")
+    let corruptData = Data("broken metadata".utf8)
+    try corruptData.write(to: metadataURL)
+    let store = makeStore(AudioRetentionPolicy(maxCount: 0, maxAge: 0))
+    store.clear()
+    store.retryCleanup()
+    _ = store.record(engine: "test", model: "test", sourceAudioURL: nil, recordingDuration: 1,
+                     transcribedText: "new", latencySeconds: 0, language: nil, errorMessage: nil, usedCloudFallback: false)
+    XCTAssertTrue(store.metadataUnavailable)
+    XCTAssertNotNil(store.cleanupError)
+    XCTAssertEqual(try Data(contentsOf: metadataURL), corruptData)
+    XCTAssertTrue(audioExists(seeded[0]))
+  }
+
+  func testValidUnindexedAudioExpiresButUnknownFilesRemain() throws {
+    try seed(ages: [])
+    let orphanName = "\(UUID().uuidString).wav"
+    try writeAudio(named: orphanName)
+    try writeAudio(named: "do-not-touch.txt")
+    let orphan = root.appendingPathComponent("audio").appendingPathComponent(orphanName)
+    try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-2 * 86_400)], ofItemAtPath: orphan.path)
+    let store = makeStore(AudioRetentionPolicy(maxCount: nil, maxAge: 86_400))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
+    XCTAssertEqual(store.orphanedAudioCount, 0)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("audio/do-not-touch.txt").path))
+  }
+
+  func testFileAndDirectorySymlinksCannotDeleteTheirTargets() throws {
+    let seeded = try seed(ages: [0])
+    let target = root.appendingPathComponent("victim.txt")
+    try Data("must survive".utf8).write(to: target)
+    let audio = root.appendingPathComponent("audio")
+    let file = audio.appendingPathComponent(try XCTUnwrap(seeded[0].audioFileName))
+    try FileManager.default.removeItem(at: file)
+    try FileManager.default.createSymbolicLink(at: file, withDestinationURL: target)
+    let store = makeStore(AudioRetentionPolicy(maxCount: nil, maxAge: nil))
+    XCTAssertNil(store.audioURL(for: seeded[0]))
+    store.clear()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: target.path))
+    XCTAssertEqual(store.sessions.count, 1)
+
+    let moved = root.appendingPathComponent("real-audio")
+    try FileManager.default.moveItem(at: audio, to: moved)
+    try FileManager.default.createSymbolicLink(at: audio, withDestinationURL: moved)
+    store.clear()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: target.path))
+    XCTAssertEqual(store.sessions.count, 1)
+  }
+
+  func testResetPreservesRetentionSettingsAndAllRecordings() throws {
+    let seeded = try seed(ages: (0..<40).map { TimeInterval($0) })
+    let suite = "RetentionTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(0, forKey: "audioRetentionMaxCount")
+    defaults.set("never", forKey: "audioRetentionAge")
+    let store = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} })
+    let state = AppState(defaults: defaults, debugSessionStore: store, loadAPIKey: { nil }, updateLoginItem: { _ in })
+    XCTAssertNil(store.retentionPolicy.maxCount, "Saved Unlimited policy must be installed before lifecycle callbacks")
+    let binding = state.$audioRetentionPolicy.sink { store.retentionPolicy = $0 }
+    defer { binding.cancel() }
+    state.resetToDefaults()
+    XCTAssertNil(state.audioRetentionPolicy.maxCount)
+    XCTAssertNil(state.audioRetentionPolicy.maxAge)
+    XCTAssertEqual(defaults.integer(forKey: "audioRetentionMaxCount"), 0)
+    XCTAssertEqual(store.sessions.count, 40)
+    for session in seeded { XCTAssertTrue(audioExists(session)) }
+  }
+
+  func testMissingDefaultsUseThirtyAndAtomicPolicyUpdatesPublishOnce() throws {
+    try seed(ages: [])
+    let suite = "RetentionTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = DebugSessionStore(rootDirectory: root, clock: { self.now }, schedule: { _, _ in {} })
+    let state = AppState(defaults: defaults, debugSessionStore: store, loadAPIKey: { nil }, updateLoginItem: { _ in })
+    XCTAssertEqual(state.audioRetentionMaxCount, .thirty)
+    var emitted: [AudioRetentionPolicy] = []
+    let binding = state.$audioRetentionPolicy.dropFirst().sink { emitted.append($0) }
+    defer { binding.cancel() }
+    let policy = AudioRetentionPolicy(maxCount: 100, maxAge: 7 * 86_400)
+    state.audioRetentionPolicy = policy
+    XCTAssertEqual(emitted, [policy])
+    XCTAssertEqual(defaults.integer(forKey: "audioRetentionMaxCount"), 100)
+    XCTAssertEqual(defaults.string(forKey: "audioRetentionAge"), "7d")
+  }
+
+  func testDeletionPreviewDoesNotMutateHistory() throws {
+    let seeded = try seed(ages: (0..<40).map { TimeInterval($0) })
+    let store = makeStore(AudioRetentionPolicy(maxCount: nil, maxAge: nil))
+    XCTAssertEqual(store.deletionCount(for: .default), 10)
+    XCTAssertEqual(store.sessions.count, 40)
+    for session in seeded { XCTAssertTrue(audioExists(session)) }
+  }
+
+  func testRetentionDefersDeletionUntilActiveTranscriptionReleasesAudio() throws {
+    let seeded = try seed(ages: [2 * 86_400])
+    let store = makeStore(AudioRetentionPolicy(maxCount: nil, maxAge: nil))
+    XCTAssertNotNil(store.acquireAudio(for: seeded[0]))
+    store.retentionPolicy = AudioRetentionPolicy(maxCount: nil, maxAge: 86_400)
+    XCTAssertTrue(audioExists(seeded[0]))
+    XCTAssertEqual(store.sessions.count, 1)
+    store.releaseAudio(for: seeded[0])
+    XCTAssertFalse(audioExists(seeded[0]))
+    XCTAssertTrue(store.sessions.isEmpty)
   }
 }

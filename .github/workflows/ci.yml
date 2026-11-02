@@ -23,7 +23,7 @@ jobs:
             || { echo '::error file=docs/analytics.js::PostHog must use the first-party analytics proxy.'; exit 1; }
 
   build:
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout
@@ -57,3 +57,6 @@ jobs:
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
             build
+
+      - name: Run regression tests
+        run: swift test --skip-update

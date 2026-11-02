@@ -694,6 +694,10 @@ struct HistorySettingsView: View {
     @ObservedObject var store: DebugSessionStore
     @StateObject private var player = DebugAudioPlayer()
     @State private var expandedSessionID: UUID?
+    @State private var pendingPolicy: AudioRetentionPolicy?
+    @State private var pendingDeletionCount = 0
+    @State private var showRetentionConfirmation = false
+    @State private var showClearConfirmation = false
 
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -726,26 +730,29 @@ struct HistorySettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
-                if !sessions.isEmpty {
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.selectFile(
-                            nil, inFileViewerRootedAtPath: store.rootDirectory.path)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                Button("Show in Finder") {
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.rootDirectory.path)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                if store.clearableRecordingCount > 0 {
                     Button("Clear All") {
-                        player.stop()
-                        store.clear()
+                        pendingDeletionCount = store.clearableRecordingCount
+                        showClearConfirmation = true
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .disabled(store.metadataUnavailable)
                 }
             }
             .padding(.horizontal)
             .padding(.top, 8)
 
             HStack(spacing: 16) {
-                Picker("Keep at most", selection: $appState.audioRetentionMaxCount) {
+                Picker("Keep at most", selection: Binding(
+                    get: { appState.audioRetentionMaxCount },
+                    set: { requestPolicy(AudioRetentionPolicy(maxCount: $0.limit, maxAge: appState.audioRetentionPolicy.maxAge)) }
+                )) {
                     ForEach(AudioRetentionCount.allCases) { option in
                         Text(option.label).tag(option)
                     }
@@ -754,7 +761,10 @@ struct HistorySettingsView: View {
                 .controlSize(.small)
                 .fixedSize()
 
-                Picker("Delete older than", selection: $appState.audioRetentionAge) {
+                Picker("Delete older than", selection: Binding(
+                    get: { appState.audioRetentionAge },
+                    set: { requestPolicy(AudioRetentionPolicy(maxCount: appState.audioRetentionPolicy.maxCount, maxAge: $0.maxAge)) }
+                )) {
                     ForEach(AudioRetentionAge.allCases) { option in
                         Text(option.label).tag(option)
                     }
@@ -768,7 +778,23 @@ struct HistorySettingsView: View {
             .font(.caption)
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .help("Recordings outside these limits are deleted automatically, along with their audio.")
+            .disabled(store.metadataUnavailable)
+            .help("These limits delete saved recordings and their History entries. Recent Transcriptions text is kept separately.")
+
+            if let error = store.cleanupError {
+                HStack(alignment: .top) {
+                    Text(error).font(.caption).foregroundColor(.orange)
+                    Spacer()
+                    Button("Retry") { store.retryCleanup() }.controlSize(.small)
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
+            if store.orphanedAudioCount > 0 {
+                Text("\(store.orphanedAudioCount) unindexed recording(s) included in disk usage. Age limits and Clear All also apply to these files.")
+                    .font(.caption).foregroundColor(.secondary)
+                    .padding(.horizontal).padding(.bottom, 8)
+            }
 
             Divider()
 
@@ -812,6 +838,37 @@ struct HistorySettingsView: View {
                 }
             }
         }
+        .onAppear { store.retryCleanup() }
+        .alert("Permanently delete recordings?", isPresented: $showRetentionConfirmation) {
+            Button("Cancel", role: .cancel) { pendingPolicy = nil }
+            Button("Delete \(pendingDeletionCount) Recordings", role: .destructive) {
+                guard let policy = pendingPolicy else { return }
+                if store.deletionCount(for: policy) > pendingDeletionCount {
+                    // New recordings arrived while the dialog was open. Show the
+                    // updated count rather than authorize additional deletions.
+                    DispatchQueue.main.async { requestPolicy(policy) }
+                } else {
+                    appState.audioRetentionPolicy = policy
+                    pendingPolicy = nil
+                }
+            }
+        } message: {
+            Text("This will permanently delete \(pendingDeletionCount) saved recording(s), including their audio and History entries. This cannot be undone. Recent Transcriptions text is kept separately.")
+        }
+        .alert("Clear saved recordings?", isPresented: $showClearConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete \(pendingDeletionCount) Recordings", role: .destructive) {
+                if store.clearableRecordingCount > pendingDeletionCount {
+                    pendingDeletionCount = store.clearableRecordingCount
+                    DispatchQueue.main.async { showClearConfirmation = true }
+                } else {
+                    player.stop()
+                    store.clear()
+                }
+            }
+        } message: {
+            Text("This will permanently delete \(pendingDeletionCount) saved recording(s), including their audio and History entries. This cannot be undone.")
+        }
         // Retention pruning can delete the file that is currently playing.
         .onReceive(store.$sessions) { sessions in
             guard let current = player.currentURL else { return }
@@ -827,6 +884,17 @@ struct HistorySettingsView: View {
             if (note.object as? NSWindow)?.title == "Overwhisper Settings" {
                 player.stop()
             }
+        }
+    }
+
+    private func requestPolicy(_ policy: AudioRetentionPolicy) {
+        let count = store.deletionCount(for: policy)
+        if count > 0 {
+            pendingPolicy = policy
+            pendingDeletionCount = count
+            showRetentionConfirmation = true
+        } else {
+            appState.audioRetentionPolicy = policy
         }
     }
 }
