@@ -39,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var initializationTask: Task<Void, Never>?
     private var transcriptionTask: Task<Void, Never>?
-    private var escapeKeyMonitor: Any?
+    private var escapeKeyMonitor: EscapeKeyMonitor?
     private var errorResetTimer: Timer?
 
     // Tap-vs-hold on the toggle hotkey: tap toggles, holding past the
@@ -96,7 +96,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        escapeKeyMonitor?.stop()
         UsageAnalytics.flush()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Accessibility may have been granted in System Settings after launch.
+        escapeKeyMonitor?.start()
     }
 
     private func launchEngineInitialization() {
@@ -787,6 +793,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startRecording() {
         guard appState.recordingState.isIdle else { return }
+        escapeKeyMonitor?.start()
 
         // Recording is allowed while the engine is still loading — audio capture
         // doesn't need the model, and transcription waits for initialization.
@@ -1221,6 +1228,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         clearFailedSession()
+        escapeKeyMonitor?.start()
         appState.recordingState = .transcribing
         overlayWindow.showTranscribing()
 
@@ -1352,13 +1360,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupEscapeKeyMonitor() {
-        escapeKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // Escape key
-                Task { @MainActor in
-                    self?.cancelActiveOperation()
+        escapeKeyMonitor = EscapeKeyMonitor(
+            isActive: { [weak self] in
+                guard let self else { return false }
+                switch self.appState.recordingState {
+                case .recording, .transcribing: return true
+                case .idle, .error: return false
                 }
-            }
-        }
+            },
+            onCancel: { [weak self] in self?.cancelActiveOperation() }
+        )
+        escapeKeyMonitor?.start()
     }
 
     private func cancelActiveOperation() {
