@@ -3,6 +3,16 @@
 Notes here are shown in the in-app update dialog. Each release is a `##` heading
 matching the version number, followed by a bullet list of user-facing changes.
 
+## 1.10.0
+
+- Choose Small, Medium, or Large transcription models with clear speed and accuracy guidance. Exact model variants remain available under Advanced.
+- Model choices now follow your language and translation settings. Switching languages never starts an unexpected download, and existing model selections are preserved.
+- Expanded the language picker, including Hindi, Bengali, Urdu, and more.
+- Retry failed transcriptions or transcribe saved recordings again from History.
+- Choose how long to keep saved recordings, with automatic cleanup by age or recording count.
+- Fixed Escape cancellation so the key does not also reach the app you are dictating into, and cancelled transcriptions cannot insert late results.
+- Improved model switching, download status, and recognition of previously downloaded models.
+
 ## 1.9.3
 
 - Fixed "Mute system audio while recording" with AirPods and other Bluetooth headsets. Opening the microphone switches the headset to a different audio profile with its own mute state, so music could keep playing during the recording and the headphones could stay muted afterwards. The mute now follows the profile switch in both directions.
