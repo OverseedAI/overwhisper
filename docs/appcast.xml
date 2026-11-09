@@ -6,6 +6,19 @@
     <description>Most recent updates to Overwhisper</description>
     <language>en</language>
     <item>
+      <title>Version 1.10.1</title>
+      <pubDate>Mon, 09 Nov 2026 21:12:10 +0000</pubDate>
+      <sparkle:version>50</sparkle:version>
+      <sparkle:shortVersionString>1.10.1</sparkle:shortVersionString>
+      <description><![CDATA[<h2>Version 1.10.1</h2><ul><li>Fixed audible recordings being incorrectly rejected as silent. Quieter speech and speech surrounded by pauses now reach transcription, while silence and isolated clicks are still skipped.</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/OverseedAI/overwhisper/releases/download/v1.10.1/Overwhisper-1.10.1.dmg"
+        length="7727765"
+        type="application/octet-stream"
+        sparkle:edSignature="plUg+S1oo4/5W+R92OGqZ9q9Np7L5pM1Y6+YbI1TIT6ns6RL+N9VrjNvxwbfDrUcQ2x45rpxS9WB7w1IxJP7DA=="
+      />
+    </item>
+    <item>
       <title>Version 1.10.0</title>
       <pubDate>Mon, 02 Nov 2026 21:58:26 +0000</pubDate>
       <sparkle:version>49</sparkle:version>
