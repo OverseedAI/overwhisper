@@ -22,11 +22,11 @@ final class RecordingActivityTests: XCTestCase {
         }
     }
 
-    func testSustainedMicNoiseStillCannotReachTranscription() {
-        for db: Float in [-50, -45, -40] {
+    func testQuietAudioAtNewFloorReachesTranscription() {
+        for db: Float in [-50, -48, -45, -40] {
             var activity = RecordingActivity()
             activity.observe(rms: rms(db), frameCount: 160_000, sampleRate: 16_000)
-            XCTAssertTrue(activity.isSilent, "Preserve the original protection against mic noise")
+            XCTAssertFalse(activity.isSilent, "Audio at or above -50 dBFS must reach transcription")
         }
     }
 
@@ -39,7 +39,7 @@ final class RecordingActivityTests: XCTestCase {
     }
 
     func testSilenceAndVeryLowNoiseAreSkipped() {
-        for amplitude: Float in [0, rms(-65), rms(-55)] {
+        for amplitude: Float in [0, rms(-65), rms(-55), rms(-50.1)] {
             var activity = RecordingActivity()
             activity.observe(rms: amplitude, frameCount: 160_000, sampleRate: 16_000)
             XCTAssertTrue(activity.isSilent)
