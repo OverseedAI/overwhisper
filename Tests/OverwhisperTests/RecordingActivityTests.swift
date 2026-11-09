@@ -4,20 +4,36 @@ import XCTest
 final class RecordingActivityTests: XCTestCase {
     private func rms(_ db: Float) -> Float { pow(10, db / 20) }
 
-    func testReportedQuietRecordingsReachTranscription() {
-        for db: Float in [-38.3, -38.1, -48] {
+    func testReportedRecordingsWithSpeechPeaksReachTranscription() {
+        // Match the reported mean/peak levels with speech bursts and pauses.
+        // Both averages fall below the old -38 dBFS whole-recording cutoff.
+        for (peakDB, activeBuffers, totalBuffers): (Float, Int, Int) in [
+            (-28.1, 35, 370), (-27.6, 22, 255)
+        ] {
             var activity = RecordingActivity()
-            for _ in 0..<250 {
-                activity.observe(rms: rms(db), frameCount: 320, sampleRate: 16_000)
+            var energy: Float = 0
+            for index in 0..<totalBuffers {
+                let amplitude: Float = index < activeBuffers ? rms(peakDB) : 0
+                energy += amplitude * amplitude
+                activity.observe(rms: amplitude, frameCount: 320, sampleRate: 16_000)
             }
-            XCTAssertFalse(activity.isSilent, "Quiet audio at \(db) dBFS must reach the engine")
+            XCTAssertLessThan(10 * log10(energy / Float(totalBuffers)), -38)
+            XCTAssertFalse(activity.isSilent, "Speech peaks must survive a low overall average")
+        }
+    }
+
+    func testSustainedMicNoiseStillCannotReachTranscription() {
+        for db: Float in [-50, -45, -40] {
+            var activity = RecordingActivity()
+            activity.observe(rms: rms(db), frameCount: 160_000, sampleRate: 16_000)
+            XCTAssertTrue(activity.isSilent, "Preserve the original protection against mic noise")
         }
     }
 
     func testPausesDoNotDiluteShortUtterance() {
         var activity = RecordingActivity()
         activity.observe(rms: 0, frameCount: 160_000, sampleRate: 16_000)
-        activity.observe(rms: rms(-45), frameCount: 3_200, sampleRate: 16_000)
+        activity.observe(rms: rms(-35), frameCount: 3_200, sampleRate: 16_000)
         activity.observe(rms: 0, frameCount: 160_000, sampleRate: 16_000)
         XCTAssertFalse(activity.isSilent)
     }
@@ -42,7 +58,7 @@ final class RecordingActivityTests: XCTestCase {
         for rate: Double in [16_000, 44_100, 48_000] {
             var activity = RecordingActivity()
             for _ in 0..<20 {
-                activity.observe(rms: rms(-40), frameCount: Int(rate / 100), sampleRate: rate)
+                activity.observe(rms: rms(-35), frameCount: Int(rate / 100), sampleRate: rate)
             }
             XCTAssertFalse(activity.isSilent)
         }

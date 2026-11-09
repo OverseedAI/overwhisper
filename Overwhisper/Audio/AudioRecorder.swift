@@ -585,7 +585,15 @@ class AudioRecorder: ObservableObject {
         }
 
         do {
-            try audioFile?.write(from: convertedBuffer)
+            guard let audioFile else { return }
+            try audioFile.write(from: convertedBuffer)
+            // Gate on audio that actually reached the WAV, not raw mic input
+            // that might fail conversion or writing.
+            activity.observe(
+                rms: bufferRMS(convertedBuffer),
+                frameCount: Int(convertedBuffer.frameLength),
+                sampleRate: convertedBuffer.format.sampleRate
+            )
         } catch {
             AppLogger.audio.error("Error writing audio buffer: \(error.localizedDescription)")
         }
@@ -624,7 +632,6 @@ class AudioRecorder: ObservableObject {
         totalSamples += frameLength
 
         let rms = sqrt(sum / Float(frameLength))
-        activity.observe(rms: rms, frameCount: frameLength, sampleRate: buffer.format.sampleRate)
         if rms > peakRMS { peakRMS = rms }
         let level = 20 * log10(max(rms, 0.000001))
 
