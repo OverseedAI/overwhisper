@@ -1018,6 +1018,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let capturedAudio = Result { try audioRecorder.stopRecording() }
         let meanRMS = audioRecorder.meanRMS
         let peakRMS = audioRecorder.peakRMS
+        let isSilent = audioRecorder.isSilent
         transcriptionTasks.start(operation: { [self] operationID in
             let (engineLabel, modelLabel) = currentEngineLabels()
             let language = appState.language
@@ -1035,11 +1036,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                if appState.skipSilentRecordings && Self.isBelowSilenceThreshold(meanRMS: meanRMS) {
+                if appState.skipSilentRecordings && isSilent {
                     let meanDb = AppDelegate.dbFromRMS(meanRMS)
                     let peakDb = AppDelegate.dbFromRMS(peakRMS)
                     AppLogger.audio.info(
-                        "Skipping silent recording — mean RMS \(meanRMS) (\(meanDb) dBFS, peak \(peakDb) dBFS) below threshold \(AppDelegate.silenceThresholdDb) dBFS"
+                        "Skipping silent recording — mean RMS \(meanRMS) (\(meanDb) dBFS, peak \(peakDb) dBFS) insufficient sustained audio"
                     )
 
                     let latency = Date().timeIntervalSince(started)
@@ -1051,7 +1052,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         transcribedText: "",
                         latency: latency,
                         language: language,
-                        errorMessage: String(format: "No speech detected (mean %.1f dBFS, peak %.1f dBFS)", meanDb, peakDb),
+                        errorMessage: String(format: "No sustained audio detected (mean %.1f dBFS, peak %.1f dBFS)", meanDb, peakDb),
                         usedCloudFallback: false
                     )
                     UsageAnalytics.trackDictation(
@@ -1739,19 +1740,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Silence detection
-
-    /// Mean RMS amplitude (dBFS) below which a recording is considered silent and
-    /// is skipped before sending to the transcription engine. Whisper hallucinates
-    /// "you" / "Thanks for watching." on near-silent inputs, so gating here keeps
-    /// noise out of the user's text. Threshold tuned against typical speech levels
-    /// (-25 to -35 dBFS mean) and condenser-mic noise floor (-45 dBFS or lower).
-    static let silenceThresholdDb: Float = -38.0
-
-    static func isBelowSilenceThreshold(meanRMS: Float) -> Bool {
-        // Treat exactly-zero buffers (e.g. failed converter chains) as silent too.
-        guard meanRMS > 0 else { return true }
-        return dbFromRMS(meanRMS) < silenceThresholdDb
-    }
 
     static func dbFromRMS(_ rms: Float) -> Float {
         20 * log10(max(rms, 1e-9))

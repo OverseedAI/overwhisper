@@ -32,6 +32,7 @@
 		CD6A803C535173D80F3D6A95 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B6842920F60C2FDB7C2A90 /* SettingsView.swift */; };
 		D75547085B767313847F6087 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B86856C6E8DC1C1CA79D95 /* AppDelegate.swift */; };
 		D905EC6BF91103042589D754 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6FFAA3DB712946DA571F3B8 /* MenuBarIcon.swift */; };
+		DA9183215DAF4628253E561B /* RecordingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780A063361E60D203482729E /* RecordingActivity.swift */; };
 		EF9D46D879B96A4DB8595AD3 /* WhisperModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7321BC30CFD88E5A2BFD6114 /* WhisperModelCatalog.swift */; };
 		F1C779843DB0F9688645B2AB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC1285E3693B5BA33093458 /* AppState.swift */; };
 		F283BF9CA8504FC7868F12F4 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57BF6ECF1ED279820E71105 /* CrashReporter.swift */; };
@@ -50,6 +51,7 @@
 		605F07BD195AAE4FEA3C5F44 /* DebugAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugAudioPlayer.swift; sourceTree = "<group>"; };
 		7321BC30CFD88E5A2BFD6114 /* WhisperModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelCatalog.swift; sourceTree = "<group>"; };
 		756F6B9208C887A594813A6B /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
+		780A063361E60D203482729E /* RecordingActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingActivity.swift; sourceTree = "<group>"; };
 		785617F77BB6DE5884349534 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7AC285E1AF2FBF9440E5111A /* EngineInitializationQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineInitializationQueue.swift; sourceTree = "<group>"; };
 		7F2158C9251C1F2168EEDCC6 /* SystemAudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioManager.swift; sourceTree = "<group>"; };
@@ -143,6 +145,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0EF1327337992F9B5CA01B /* AudioRecorder.swift */,
+				780A063361E60D203482729E /* RecordingActivity.swift */,
 				7F2158C9251C1F2168EEDCC6 /* SystemAudioManager.swift */,
 			);
 			path = Audio;
@@ -307,6 +310,7 @@
 				A5CC058DCB44FF020BCAA97B /* OverlayWindow.swift in Sources */,
 				A29C2673D8311037884AC6DD /* OverwhisperApp.swift in Sources */,
 				6DD1BCF8D745B4C56672FEEF /* ParakeetEngine.swift in Sources */,
+				DA9183215DAF4628253E561B /* RecordingActivity.swift in Sources */,
 				CD6A803C535173D80F3D6A95 /* SettingsView.swift in Sources */,
 				8D87D7621BF3B6F19F1543BA /* SystemAudioManager.swift in Sources */,
 				3C20ABADE932477FE5057996 /* TextInserter.swift in Sources */,
