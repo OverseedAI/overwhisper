@@ -386,7 +386,7 @@ class AppState: ObservableObject {
     // one-tick transients (keyboard clacks, door slams) can't mask a mic
     // that isn't actually picking up speech.
     // audioLevel is normalized 0...1 over -40...0 dBFS, so 0.05 ≈ -38 dBFS —
-    // the same threshold used to skip silent recordings after the fact.
+    // used only for the live input warning, not the transcription gate.
     private let silenceLevelThreshold: Float = 0.05
     // -32 dBFS: one-shot health check for the mic itself, not a running
     // signal monitor. The first time any 100ms chunk reaches this level the

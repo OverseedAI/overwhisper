@@ -233,10 +233,12 @@ class AudioRecorder: ObservableObject {
 
     /// Mean RMS amplitude (linear, 0..1) across the entire most recent recording,
     /// computed as `sqrt(sumOfSquares / totalFrames)` over the raw mic channel.
-    /// Reset on each `startRecording()` call. Use this — not `peakRMS` — to gate
-    /// silent recordings, because a single mic transient can push peak above any
-    /// threshold even when the bulk of the recording is silence.
+    /// Reset on each `startRecording()` call. Used for diagnostics; the silence
+    /// gate tracks active duration so pauses cannot dilute quiet speech.
     private(set) var meanRMS: Float = 0
+
+    private var activity = RecordingActivity()
+    var isSilent: Bool { activity.isSilent }
 
     private var sumOfSquares: Double = 0
     private var totalSamples: Int = 0
@@ -259,6 +261,7 @@ class AudioRecorder: ObservableObject {
         loggedOnce.removeAll()
         peakRMS = 0
         meanRMS = 0
+        activity = RecordingActivity()
         sumOfSquares = 0
         totalSamples = 0
 
@@ -609,6 +612,7 @@ class AudioRecorder: ObservableObject {
     private func updateAudioLevel(buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
 
         var sum: Float = 0
         for i in 0..<frameLength {
@@ -620,6 +624,7 @@ class AudioRecorder: ObservableObject {
         totalSamples += frameLength
 
         let rms = sqrt(sum / Float(frameLength))
+        activity.observe(rms: rms, frameCount: frameLength, sampleRate: buffer.format.sampleRate)
         if rms > peakRMS { peakRMS = rms }
         let level = 20 * log10(max(rms, 0.000001))
 
