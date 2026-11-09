@@ -3,6 +3,10 @@
 Notes here are shown in the in-app update dialog. Each release is a `##` heading
 matching the version number, followed by a bullet list of user-facing changes.
 
+## 1.10.1
+
+- Fixed audible recordings being incorrectly rejected as silent. Quieter speech and speech surrounded by pauses now reach transcription, while silence and isolated clicks are still skipped.
+
 ## 1.10.0
 
 - Choose Small, Medium, or Large transcription models with clear speed and accuracy guidance. Exact model variants remain available under Advanced.
