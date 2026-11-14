@@ -40,17 +40,22 @@ actor ParakeetEngine: TranscriptionEngine {
         await MainActor.run {
             appState.isDownloadingModel = true
             appState.currentlyDownloadingModel = modelType.rawValue
+            appState.modelDownloadProgress = 0
         }
 
         for attempt in 1...Self.maxRetries {
             do {
-                let models = try await AsrModels.downloadAndLoad(version: modelVersion)
+                let models = try await AsrModels.downloadAndLoad(
+                    version: modelVersion,
+                    progressHandler: Self.progressHandler(for: modelType, appState: appState)
+                )
                 let manager = AsrManager(config: .default)
                 try await manager.loadModels(models)
                 asrManager = manager
                 isInitialized = true
 
                 await MainActor.run {
+                    appState.modelDownloadProgress = 1
                     appState.isDownloadingModel = false
                     appState.currentlyDownloadingModel = nil
                     appState.parakeetDownloadedModels.insert(modelType.rawValue)
@@ -112,6 +117,14 @@ actor ParakeetEngine: TranscriptionEngine {
 }
 
 extension ParakeetEngine {
+    private static func progressHandler(for modelType: ParakeetModelType, appState: AppState) -> ProgressHandler {
+        { progress in
+            Task { @MainActor in
+                appState.updateModelDownloadProgress(progress.fractionCompleted, for: modelType.rawValue)
+            }
+        }
+    }
+
     /// Downloads model weights without changing the user's active engine/model selection.
     /// Reports progress and errors via AppState.
     @MainActor
@@ -120,13 +133,18 @@ extension ParakeetEngine {
 
         appState.isDownloadingModel = true
         appState.currentlyDownloadingModel = modelType.rawValue
+        appState.modelDownloadProgress = 0
         defer {
             appState.isDownloadingModel = false
             appState.currentlyDownloadingModel = nil
         }
 
         do {
-            _ = try await AsrModels.download(version: version)
+            _ = try await AsrModels.download(
+                version: version,
+                progressHandler: progressHandler(for: modelType, appState: appState)
+            )
+            appState.modelDownloadProgress = 1
             appState.parakeetDownloadedModels.insert(modelType.rawValue)
             UsageAnalytics.trackModelDownload(engine: .parakeet, model: modelType.rawValue, succeeded: true)
             AppLogger.transcription.info("Downloaded Parakeet model: \(modelType.rawValue)")

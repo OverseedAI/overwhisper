@@ -134,4 +134,25 @@ final class WhisperModelStateTests: XCTestCase {
         XCTAssertEqual(state.language, "auto")
     }
 
+
+    func testDownloadProgressIgnoresLateCallbacksAndStaysMonotonic() {
+        let state = makeState()
+        let modelID = ParakeetModelType.ultra.rawValue
+        state.isDownloadingModel = true
+        state.currentlyDownloadingModel = modelID
+        state.updateModelDownloadProgress(0.6, for: modelID)
+        XCTAssertEqual(state.modelDownloadProgress, 0.6)
+        state.updateModelDownloadProgress(0.1, for: modelID) // SDK starts another preparation phase.
+        state.updateModelDownloadProgress(.nan, for: modelID)
+        state.updateModelDownloadProgress(0.9, for: ParakeetModelType.v3Multilingual.rawValue)
+        XCTAssertEqual(state.modelDownloadProgress, 0.6)
+        state.updateModelDownloadProgress(1.1, for: modelID)
+        XCTAssertEqual(state.modelDownloadProgress, 1)
+        state.isDownloadingModel = false
+        state.currentlyDownloadingModel = nil
+        state.modelDownloadProgress = 0
+        state.updateModelDownloadProgress(0.9, for: modelID)
+        XCTAssertEqual(state.modelDownloadProgress, 0)
+    }
+
 }

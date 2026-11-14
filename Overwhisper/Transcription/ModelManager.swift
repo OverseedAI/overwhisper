@@ -168,7 +168,7 @@ class ModelManager: ObservableObject {
                 downloadBase: devDownloadBase,
                 progressCallback: { progress in
                     Task { @MainActor in
-                        self.appState.modelDownloadProgress = progress.fractionCompleted
+                        self.appState.updateModelDownloadProgress(progress.fractionCompleted, for: variant)
                         self.downloadProgress[variant] = progress.fractionCompleted
                     }
                 }

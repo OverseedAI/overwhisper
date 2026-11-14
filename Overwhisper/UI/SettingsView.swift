@@ -555,14 +555,7 @@ struct ModelRowView: View {
             Spacer()
 
             if isDownloading {
-                HStack(spacing: 8) {
-                    ProgressView(value: downloadProgress)
-                        .frame(width: 60)
-                    Text("\(Int(downloadProgress * 100))%")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(width: 35)
-                }
+                ModelDownloadProgressView(progress: downloadProgress)
             } else if isDownloaded {
                 HStack(spacing: 8) {
                     if isSelected {
@@ -699,14 +692,7 @@ struct WhisperTierRowView: View {
     @ViewBuilder
     private var trailingControl: some View {
         if isDownloading {
-            HStack(spacing: 8) {
-                ProgressView(value: downloadProgress)
-                    .frame(width: 60)
-                Text("\(Int(downloadProgress * 100))%")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(width: 35)
-            }
+            ModelDownloadProgressView(progress: downloadProgress)
         } else {
             switch state.action {
             case .none:
@@ -775,6 +761,24 @@ struct CustomWhisperModelRowView: View {
     }
 }
 
+/// Shared by curated Whisper models, exact Whisper variants, and Parakeet models.
+struct ModelDownloadProgressView: View {
+    let progress: Double
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView(value: progress)
+                .progressViewStyle(.linear)
+                .frame(width: 60)
+            Text("\(Int(progress * 100))%")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+                .frame(width: 35)
+        }
+    }
+}
+
 struct ParakeetModelRowView: View {
     @EnvironmentObject var appState: AppState
     @State private var showDeleteConfirmation = false
@@ -818,9 +822,7 @@ struct ParakeetModelRowView: View {
             Spacer()
 
             if isDownloading {
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .frame(width: 100, alignment: .trailing)
+                ModelDownloadProgressView(progress: appState.modelDownloadProgress)
             } else if isDownloaded {
                 HStack(spacing: 8) {
                     if isSelected {

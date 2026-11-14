@@ -654,6 +654,13 @@ class AppState: ObservableObject {
         reconcileCuratedWhisperModel()
     }
 
+    /// SDK callbacks can arrive late or restart their fraction for model preparation.
+    /// Keep the active download monotonic and ignore callbacks from finished/other models.
+    func updateModelDownloadProgress(_ fraction: Double, for modelID: String) {
+        guard isDownloadingModel, currentlyDownloadingModel == modelID, fraction.isFinite else { return }
+        modelDownloadProgress = max(modelDownloadProgress, min(max(fraction, 0), 1))
+    }
+
     private func normalizeLanguageForEngine() {
         let normalized = TranscriptionLanguagePolicy.normalized(language, engine: transcriptionEngine, parakeet: parakeetModel)
         if normalized != language { language = normalized }
