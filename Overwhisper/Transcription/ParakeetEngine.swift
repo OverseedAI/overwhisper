@@ -34,7 +34,7 @@ actor ParakeetEngine: TranscriptionEngine {
         isInitialized = false
         currentModelType = modelType
 
-        let modelVersion: AsrModelVersion = modelType == .v2English ? .v2 : .v3
+        let modelVersion = modelType.asrModelVersion
         AppLogger.transcription.info("Initializing Parakeet with model: \(modelType.rawValue)")
 
         await MainActor.run {
@@ -116,7 +116,7 @@ extension ParakeetEngine {
     /// Reports progress and errors via AppState.
     @MainActor
     static func download(modelType: ParakeetModelType, appState: AppState) async {
-        let version: AsrModelVersion = modelType == .v2English ? .v2 : .v3
+        let version = modelType.asrModelVersion
 
         appState.isDownloadingModel = true
         appState.currentlyDownloadingModel = modelType.rawValue
@@ -148,6 +148,17 @@ enum ParakeetError: LocalizedError {
             return "Parakeet engine is not initialized"
         case .initializationFailed(let message):
             return "Parakeet initialization failed: \(message)"
+        }
+    }
+}
+
+// Keep downloads and inference on the same explicit SDK model version.
+extension ParakeetModelType {
+    var asrModelVersion: AsrModelVersion {
+        switch self {
+        case .v2English: return .v2
+        case .v3Multilingual: return .v3
+        case .ultra: return .ultra
         }
     }
 }

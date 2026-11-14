@@ -13,7 +13,7 @@ let package = Package(
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
         .package(url: "https://github.com/soffes/HotKey.git", from: "0.2.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.5.0"),
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.12.4"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.3"),
         .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.64.6")
     ],
     targets: [

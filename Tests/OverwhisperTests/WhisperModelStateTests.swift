@@ -93,4 +93,45 @@ final class WhisperModelStateTests: XCTestCase {
         state.transcriptionEngine = .whisperKit
         XCTAssertEqual(state.language, "fr")
     }
+
+    func testUltraSelectionAndDownloadsSurviveRelaunch() {
+        let state = makeState()
+        state.transcriptionEngine = .parakeet
+        state.parakeetModel = .ultra
+        state.language = "fr"
+        state.parakeetDownloadedModels = [ParakeetModelType.ultra.rawValue, ParakeetModelType.v3Multilingual.rawValue]
+
+        let restored = makeState()
+        XCTAssertEqual(restored.transcriptionEngine, .parakeet)
+        XCTAssertEqual(restored.parakeetModel, .ultra)
+        XCTAssertEqual(restored.language, "fr")
+        XCTAssertEqual(restored.parakeetDownloadedModels, state.parakeetDownloadedModels)
+        XCTAssertFalse(restored.isDownloadingModel)
+    }
+
+    func testAddingUltraPreservesExistingV3Selection() {
+        defaults.set(TranscriptionEngineType.parakeet.rawValue, forKey: "transcriptionEngine")
+        defaults.set(ParakeetModelType.v3Multilingual.rawValue, forKey: "parakeetModel")
+        defaults.set([ParakeetModelType.v3Multilingual.rawValue], forKey: "parakeetDownloadedModels")
+        let state = makeState()
+        XCTAssertEqual(state.parakeetModel, .v3Multilingual)
+        XCTAssertEqual(state.parakeetDownloadedModels, [ParakeetModelType.v3Multilingual.rawValue])
+        XCTAssertFalse(state.isDownloadingModel)
+    }
+
+    func testSwitchingBetweenUltraAndEnglishOnlyNormalizesLanguage() {
+        let state = makeState()
+        state.transcriptionEngine = .parakeet
+        state.parakeetModel = .ultra
+        state.language = "fr"
+        XCTAssertEqual(state.language, "fr")
+        state.parakeetModel = .v2English
+        XCTAssertEqual(state.language, "en")
+        state.transcriptionEngine = .whisperKit
+        state.language = "ko"
+        state.parakeetModel = .ultra
+        state.transcriptionEngine = .parakeet
+        XCTAssertEqual(state.language, "auto")
+    }
+
 }

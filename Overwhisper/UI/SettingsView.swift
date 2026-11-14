@@ -275,7 +275,7 @@ struct TranscriptionSettingsView: View {
         case .whisperKit:
             return "On-device via Apple-optimized WhisperKit. English or multilingual models."
         case .parakeet:
-            return "On-device via NVIDIA Parakeet. v2 is English-only; v3 supports 25 European languages."
+            return "On-device via NVIDIA Parakeet. v2 is English-only; v3 and Ultra support 25 European languages."
         case .openAI:
             return "Cloud-based. Audio is sent to OpenAI's servers for transcription."
         }
@@ -295,7 +295,7 @@ struct TranscriptionSettingsView: View {
             Text("Language")
         } footer: {
             if isUsingParakeet && appState.parakeetModel == .v2English {
-                Text("Parakeet v2 is English-only. Switch to v3 for other languages.")
+                Text("Parakeet v2 is English-only. Switch to v3 or Ultra for other languages.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else if appState.translateToEnglish {
@@ -412,6 +412,10 @@ struct TranscriptionSettingsView: View {
                     }
                 } header: {
                     Text("Models")
+                } footer: {
+                    Text("Ultra is by [Moondream](https://huggingface.co/moondream/parakeet-ultra), based on [NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), with [Core ML conversion by FluidInference](https://huggingface.co/FluidInference/parakeet-ultra-coreml). Model weights are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
 

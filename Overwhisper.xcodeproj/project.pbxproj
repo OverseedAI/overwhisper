@@ -33,6 +33,7 @@
 		D75547085B767313847F6087 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B86856C6E8DC1C1CA79D95 /* AppDelegate.swift */; };
 		D905EC6BF91103042589D754 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6FFAA3DB712946DA571F3B8 /* MenuBarIcon.swift */; };
 		DA9183215DAF4628253E561B /* RecordingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780A063361E60D203482729E /* RecordingActivity.swift */; };
+		E677BB75F3922A5CD4EC8616 /* ParakeetUltraNotice.txt in Resources */ = {isa = PBXBuildFile; fileRef = 446FBD2A7AB791EF391B5FBD /* ParakeetUltraNotice.txt */; };
 		EF9D46D879B96A4DB8595AD3 /* WhisperModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7321BC30CFD88E5A2BFD6114 /* WhisperModelCatalog.swift */; };
 		F1C779843DB0F9688645B2AB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC1285E3693B5BA33093458 /* AppState.swift */; };
 		F283BF9CA8504FC7868F12F4 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57BF6ECF1ED279820E71105 /* CrashReporter.swift */; };
@@ -47,6 +48,7 @@
 		27FA5B6D32A74360C3778DFC /* TranscriptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionEngine.swift; sourceTree = "<group>"; };
 		3ADFC9097F990B8F1921F2B8 /* DebugSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSession.swift; sourceTree = "<group>"; };
 		3F51FC25B877C421AA6475AC /* WhisperKitEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitEngine.swift; sourceTree = "<group>"; };
+		446FBD2A7AB791EF391B5FBD /* ParakeetUltraNotice.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = ParakeetUltraNotice.txt; sourceTree = "<group>"; };
 		5AACBA6521305AC62E4D5F08 /* TextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInserter.swift; sourceTree = "<group>"; };
 		605F07BD195AAE4FEA3C5F44 /* DebugAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugAudioPlayer.swift; sourceTree = "<group>"; };
 		7321BC30CFD88E5A2BFD6114 /* WhisperModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelCatalog.swift; sourceTree = "<group>"; };
@@ -198,6 +200,7 @@
 			isa = PBXGroup;
 			children = (
 				785617F77BB6DE5884349534 /* Assets.xcassets */,
+				446FBD2A7AB791EF391B5FBD /* ParakeetUltraNotice.txt */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -244,7 +247,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1500;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					F248A3BAE5A8BA602CDC7605 = {
 						ProvisioningStyle = Automatic;
@@ -283,6 +286,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F4FBBD24A0D5C59BC28CB4F3 /* Assets.xcassets in Resources */,
+				E677BB75F3922A5CD4EC8616 /* ParakeetUltraNotice.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -533,8 +537,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.12.4;
+				kind = exactVersion;
+				version = 0.17.3;
 			};
 		};
 		A8C6D3CF929A26A498DEFB30 /* XCRemoteSwiftPackageReference "Sparkle" */ = {

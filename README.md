@@ -68,8 +68,11 @@ Release builds are arm64-only.
 ### Local-first transcription
 
 - **WhisperKit** local transcription, optimized for Apple Silicon.
-- **Parakeet** local transcription via FluidAudio, including Parakeet v2 English
-  and Parakeet v3 multilingual model options.
+- **Parakeet** local transcription via FluidAudio, including Parakeet v2 English,
+  Parakeet v3 multilingual, and Parakeet Ultra multilingual model options.
+  Ultra is an optional ~630 MB download and supports the same 25 European
+  languages as v3. Download it in Settings → Transcription → Parakeet, then
+  select its row to use it. Existing model selections are preserved.
 - **OpenAI Whisper API** as an optional cloud engine when you prefer hosted
   transcription.
 - Download, select, and delete local models from the settings UI.
@@ -141,7 +144,7 @@ Overwhisper is local-first.
 
 ## Building From Source
 
-Requires Xcode 15+ and Swift 5.9+.
+Requires Xcode 16+ and Swift 6.0+ (FluidAudio uses Swift 6).
 
 ```bash
 swift build
@@ -168,6 +171,18 @@ trying to create its own nested sandbox or write shared caches. Use:
 
 ```bash
 swift build --disable-sandbox --cache-path .swiftpm-cache
+```
+
+### Parakeet Ultra hardware smoke test
+
+The normal `swift test` suite does not download model weights. To run the optional
+Ultra test, prepare an isolated folder containing `models/parakeet-ultra/` with
+FluidAudio's complete Ultra Core ML model and an `english.wav` recording saying
+“The quick brown fox jumps over the lazy dog. This is a speech recognition test.”
+Use synthetic speech rather than personal recordings.
+
+```bash
+OVERWHISPER_PARAKEET_TEST_ROOT=/path/to/fixtures swift test --filter NativeParakeetModelTests
 ```
 
 ## Project Structure
@@ -221,4 +236,13 @@ development, you can do that at
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+The application is MIT licensed. See [LICENSE](LICENSE).
+
+Downloaded model weights have separate licenses. Parakeet Ultra is by
+[Moondream](https://huggingface.co/moondream/parakeet-ultra), based on
+[NVIDIA Parakeet v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), with
+[Core ML conversion by FluidInference](https://huggingface.co/FluidInference/parakeet-ultra-coreml).
+The weights are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+which permits free local and commercial use with attribution. Overwhisper downloads
+these weights on request and does not modify them. See the bundled
+[model notice](Overwhisper/Resources/ParakeetUltraNotice.txt).

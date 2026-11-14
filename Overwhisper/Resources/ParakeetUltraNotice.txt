@@ -1,0 +1,17 @@
+Parakeet Ultra — Model Attribution
+
+Parakeet Ultra by Moondream:
+https://huggingface.co/moondream/parakeet-ultra
+
+Based on NVIDIA parakeet-tdt-0.6b-v3:
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+
+Core ML conversion by FluidInference:
+https://huggingface.co/FluidInference/parakeet-ultra-coreml
+
+Model weights: Creative Commons Attribution 4.0 International (CC BY 4.0).
+License: https://creativecommons.org/licenses/by/4.0/
+Legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+
+Overwhisper downloads the converted model on request without modifying its weights.
+The application's MIT license does not replace the model's license.

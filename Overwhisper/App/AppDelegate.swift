@@ -573,7 +573,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .whisperKit:
             label = "WhisperKit · \(appState.whisperModel.displayName)"
         case .parakeet:
-            label = "Parakeet · \(appState.parakeetModel == .v2English ? "v2 English" : "v3 Multilingual")"
+            label = "Parakeet · \(appState.parakeetModel.menuName)"
         case .openAI:
             label = "OpenAI · whisper-1"
         }

@@ -70,6 +70,7 @@ enum TranscriptionEngineType: String, CaseIterable, Identifiable {
 enum ParakeetModelType: String, CaseIterable, Identifiable {
     case v2English = "parakeet-v2"
     case v3Multilingual = "parakeet-v3"
+    case ultra = "parakeet-ultra"
 
     var id: String { rawValue }
 
@@ -77,6 +78,15 @@ enum ParakeetModelType: String, CaseIterable, Identifiable {
         switch self {
         case .v2English: return "Parakeet v2 — English"
         case .v3Multilingual: return "Parakeet v3 — Multilingual"
+        case .ultra: return "Parakeet Ultra — Multilingual"
+        }
+    }
+
+    var menuName: String {
+        switch self {
+        case .v2English: return "v2 English"
+        case .v3Multilingual: return "v3 Multilingual"
+        case .ultra: return "Ultra Multilingual"
         }
     }
 
@@ -84,6 +94,7 @@ enum ParakeetModelType: String, CaseIterable, Identifiable {
         switch self {
         case .v2English: return "~600 MB"
         case .v3Multilingual: return "~700 MB"
+        case .ultra: return "~630 MB"
         }
     }
 
@@ -91,6 +102,7 @@ enum ParakeetModelType: String, CaseIterable, Identifiable {
         switch self {
         case .v2English: return "parakeet-tdt-0.6b-v2"
         case .v3Multilingual: return "parakeet-tdt-0.6b-v3"
+        case .ultra: return "parakeet-ultra"
         }
     }
 

@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: com.overseed
   deploymentTarget:
     macOS: "14.0"
-  xcodeVersion: "15.0"
+  xcodeVersion: "16.0"
   generateEmptyDirectories: true
   groupSortPosition: top
 
@@ -32,7 +32,7 @@ packages:
     from: "2.6.0"
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
-    from: "0.12.4"
+    exactVersion: "0.17.3"
   PostHog:
     url: https://github.com/PostHog/posthog-ios.git
     exactVersion: "3.64.6"
