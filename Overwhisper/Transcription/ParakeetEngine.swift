@@ -34,23 +34,28 @@ actor ParakeetEngine: TranscriptionEngine {
         isInitialized = false
         currentModelType = modelType
 
-        let modelVersion: AsrModelVersion = modelType == .v2English ? .v2 : .v3
+        let modelVersion = modelType.asrModelVersion
         AppLogger.transcription.info("Initializing Parakeet with model: \(modelType.rawValue)")
 
         await MainActor.run {
             appState.isDownloadingModel = true
             appState.currentlyDownloadingModel = modelType.rawValue
+            appState.modelDownloadProgress = 0
         }
 
         for attempt in 1...Self.maxRetries {
             do {
-                let models = try await AsrModels.downloadAndLoad(version: modelVersion)
+                let models = try await AsrModels.downloadAndLoad(
+                    version: modelVersion,
+                    progressHandler: Self.progressHandler(for: modelType, appState: appState)
+                )
                 let manager = AsrManager(config: .default)
                 try await manager.loadModels(models)
                 asrManager = manager
                 isInitialized = true
 
                 await MainActor.run {
+                    appState.modelDownloadProgress = 1
                     appState.isDownloadingModel = false
                     appState.currentlyDownloadingModel = nil
                     appState.parakeetDownloadedModels.insert(modelType.rawValue)
@@ -112,21 +117,41 @@ actor ParakeetEngine: TranscriptionEngine {
 }
 
 extension ParakeetEngine {
+    private static func progressHandler(for modelType: ParakeetModelType, appState: AppState) -> ProgressHandler {
+        { progress in
+            Task { @MainActor in
+                let isPreparing: Bool
+                switch progress.phase {
+                case .compiling: isPreparing = true
+                case .listing, .downloading: isPreparing = false
+                }
+                appState.updateModelDownloadProgress(
+                    progress.fractionCompleted, for: modelType.rawValue, isPreparing: isPreparing
+                )
+            }
+        }
+    }
+
     /// Downloads model weights without changing the user's active engine/model selection.
     /// Reports progress and errors via AppState.
     @MainActor
     static func download(modelType: ParakeetModelType, appState: AppState) async {
-        let version: AsrModelVersion = modelType == .v2English ? .v2 : .v3
+        let version = modelType.asrModelVersion
 
         appState.isDownloadingModel = true
         appState.currentlyDownloadingModel = modelType.rawValue
+        appState.modelDownloadProgress = 0
         defer {
             appState.isDownloadingModel = false
             appState.currentlyDownloadingModel = nil
         }
 
         do {
-            _ = try await AsrModels.download(version: version)
+            _ = try await AsrModels.download(
+                version: version,
+                progressHandler: progressHandler(for: modelType, appState: appState)
+            )
+            appState.modelDownloadProgress = 1
             appState.parakeetDownloadedModels.insert(modelType.rawValue)
             UsageAnalytics.trackModelDownload(engine: .parakeet, model: modelType.rawValue, succeeded: true)
             AppLogger.transcription.info("Downloaded Parakeet model: \(modelType.rawValue)")
@@ -148,6 +173,17 @@ enum ParakeetError: LocalizedError {
             return "Parakeet engine is not initialized"
         case .initializationFailed(let message):
             return "Parakeet initialization failed: \(message)"
+        }
+    }
+}
+
+// Keep downloads and inference on the same explicit SDK model version.
+extension ParakeetModelType {
+    var asrModelVersion: AsrModelVersion {
+        switch self {
+        case .v2English: return .v2
+        case .v3Multilingual: return .v3
+        case .ultra: return .ultra
         }
     }
 }

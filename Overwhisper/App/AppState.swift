@@ -70,6 +70,7 @@ enum TranscriptionEngineType: String, CaseIterable, Identifiable {
 enum ParakeetModelType: String, CaseIterable, Identifiable {
     case v2English = "parakeet-v2"
     case v3Multilingual = "parakeet-v3"
+    case ultra = "parakeet-ultra"
 
     var id: String { rawValue }
 
@@ -77,6 +78,15 @@ enum ParakeetModelType: String, CaseIterable, Identifiable {
         switch self {
         case .v2English: return "Parakeet v2 — English"
         case .v3Multilingual: return "Parakeet v3 — Multilingual"
+        case .ultra: return "Parakeet Ultra — Multilingual"
+        }
+    }
+
+    var menuName: String {
+        switch self {
+        case .v2English: return "v2 English"
+        case .v3Multilingual: return "v3 Multilingual"
+        case .ultra: return "Ultra Multilingual"
         }
     }
 
@@ -84,6 +94,7 @@ enum ParakeetModelType: String, CaseIterable, Identifiable {
         switch self {
         case .v2English: return "~600 MB"
         case .v3Multilingual: return "~700 MB"
+        case .ultra: return "~630 MB"
         }
     }
 
@@ -91,6 +102,7 @@ enum ParakeetModelType: String, CaseIterable, Identifiable {
         switch self {
         case .v2English: return "parakeet-tdt-0.6b-v2"
         case .v3Multilingual: return "parakeet-tdt-0.6b-v3"
+        case .ultra: return "parakeet-ultra"
         }
     }
 
@@ -347,7 +359,10 @@ class AppState: ObservableObject {
     // Model state
     @Published var isModelDownloaded: Bool = false
     @Published var modelDownloadProgress: Double = 0.0
-    @Published var isDownloadingModel: Bool = false
+    @Published var isPreparingModel: Bool = false
+    @Published var isDownloadingModel: Bool = false {
+        didSet { isPreparingModel = false }
+    }
     @Published var isInitializingEngine: Bool = false
     @Published var downloadedModels: Set<String> = []
     @Published var parakeetDownloadedModels: Set<String> {
@@ -640,6 +655,15 @@ class AppState: ObservableObject {
         toggleHotkeyConfig = .defaultToggle
         pushToTalkHotkeyConfig = .defaultPushToTalk
         reconcileCuratedWhisperModel()
+    }
+
+    /// SDK callbacks can arrive late or restart their fraction for model preparation.
+    /// Keep the active download monotonic and ignore callbacks from finished/other models.
+    func updateModelDownloadProgress(_ fraction: Double, for modelID: String, isPreparing: Bool = false) {
+        guard isDownloadingModel, currentlyDownloadingModel == modelID, fraction.isFinite else { return }
+        modelDownloadProgress = max(modelDownloadProgress, min(max(fraction, 0), 1))
+        // FluidAudio finishes individual components before the whole model is ready.
+        isPreparingModel = isPreparingModel || isPreparing
     }
 
     private func normalizeLanguageForEngine() {

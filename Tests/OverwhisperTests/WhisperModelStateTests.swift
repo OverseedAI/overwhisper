@@ -93,4 +93,89 @@ final class WhisperModelStateTests: XCTestCase {
         state.transcriptionEngine = .whisperKit
         XCTAssertEqual(state.language, "fr")
     }
+
+    func testUltraSelectionAndDownloadsSurviveRelaunch() {
+        let state = makeState()
+        state.transcriptionEngine = .parakeet
+        state.parakeetModel = .ultra
+        state.language = "fr"
+        state.parakeetDownloadedModels = [ParakeetModelType.ultra.rawValue, ParakeetModelType.v3Multilingual.rawValue]
+
+        let restored = makeState()
+        XCTAssertEqual(restored.transcriptionEngine, .parakeet)
+        XCTAssertEqual(restored.parakeetModel, .ultra)
+        XCTAssertEqual(restored.language, "fr")
+        XCTAssertEqual(restored.parakeetDownloadedModels, state.parakeetDownloadedModels)
+        XCTAssertFalse(restored.isDownloadingModel)
+    }
+
+    func testAddingUltraPreservesExistingV3Selection() {
+        defaults.set(TranscriptionEngineType.parakeet.rawValue, forKey: "transcriptionEngine")
+        defaults.set(ParakeetModelType.v3Multilingual.rawValue, forKey: "parakeetModel")
+        defaults.set([ParakeetModelType.v3Multilingual.rawValue], forKey: "parakeetDownloadedModels")
+        let state = makeState()
+        XCTAssertEqual(state.parakeetModel, .v3Multilingual)
+        XCTAssertEqual(state.parakeetDownloadedModels, [ParakeetModelType.v3Multilingual.rawValue])
+        XCTAssertFalse(state.isDownloadingModel)
+    }
+
+    func testSwitchingBetweenUltraAndEnglishOnlyNormalizesLanguage() {
+        let state = makeState()
+        state.transcriptionEngine = .parakeet
+        state.parakeetModel = .ultra
+        state.language = "fr"
+        XCTAssertEqual(state.language, "fr")
+        state.parakeetModel = .v2English
+        XCTAssertEqual(state.language, "en")
+        state.transcriptionEngine = .whisperKit
+        state.language = "ko"
+        state.parakeetModel = .ultra
+        state.transcriptionEngine = .parakeet
+        XCTAssertEqual(state.language, "auto")
+    }
+
+
+    func testDownloadProgressIgnoresLateCallbacksAndStaysMonotonic() {
+        let state = makeState()
+        let modelID = ParakeetModelType.ultra.rawValue
+        state.isDownloadingModel = true
+        state.currentlyDownloadingModel = modelID
+        state.updateModelDownloadProgress(0.6, for: modelID)
+        XCTAssertEqual(state.modelDownloadProgress, 0.6)
+        state.updateModelDownloadProgress(0.1, for: modelID) // SDK starts another preparation phase.
+        state.updateModelDownloadProgress(.nan, for: modelID)
+        state.updateModelDownloadProgress(0.9, for: ParakeetModelType.v3Multilingual.rawValue)
+        XCTAssertEqual(state.modelDownloadProgress, 0.6)
+        state.updateModelDownloadProgress(1.1, for: modelID)
+        XCTAssertEqual(state.modelDownloadProgress, 1)
+        state.isDownloadingModel = false
+        state.currentlyDownloadingModel = nil
+        state.modelDownloadProgress = 0
+        state.updateModelDownloadProgress(0.9, for: modelID)
+        XCTAssertEqual(state.modelDownloadProgress, 0)
+    }
+
+
+    func testComponentCompletionStaysInPreparationUntilOuterOperationFinishes() {
+        let state = makeState()
+        let modelID = ParakeetModelType.ultra.rawValue
+        state.isDownloadingModel = true
+        state.currentlyDownloadingModel = modelID
+        state.updateModelDownloadProgress(0.4, for: modelID)
+        XCTAssertFalse(state.isPreparingModel)
+        state.updateModelDownloadProgress(1, for: modelID, isPreparing: true)
+        XCTAssertTrue(state.isPreparingModel)
+        state.updateModelDownloadProgress(0, for: modelID) // Next component starts.
+        XCTAssertTrue(state.isPreparingModel)
+        XCTAssertTrue(state.isDownloadingModel)
+        state.isDownloadingModel = false // Outer operation succeeds or fails.
+        XCTAssertFalse(state.isPreparingModel)
+        state.updateModelDownloadProgress(1, for: modelID, isPreparing: true)
+        XCTAssertFalse(state.isPreparingModel)
+        state.isDownloadingModel = true
+        state.currentlyDownloadingModel = ParakeetModelType.v3Multilingual.rawValue
+        state.updateModelDownloadProgress(1, for: modelID, isPreparing: true)
+        XCTAssertFalse(state.isPreparingModel)
+    }
+
 }
