@@ -3,6 +3,11 @@
 Notes here are shown in the in-app update dialog. Each release is a `##` heading
 matching the version number, followed by a bullet list of user-facing changes.
 
+## 1.11.0
+
+- Added Parakeet Ultra for fast, local transcription in 25 European languages. Download and select it under Settings → Transcription → Parakeet.
+- All local model downloads now share a progress bar and percentage. Parakeet also shows when downloaded models are being prepared.
+
 ## 1.10.1
 
 - Fixed audible recordings being incorrectly rejected as silent. Quieter speech and speech surrounded by pauses now reach transcription, while silence and isolated clicks are still skipped.

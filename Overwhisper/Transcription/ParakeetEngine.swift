@@ -120,7 +120,14 @@ extension ParakeetEngine {
     private static func progressHandler(for modelType: ParakeetModelType, appState: AppState) -> ProgressHandler {
         { progress in
             Task { @MainActor in
-                appState.updateModelDownloadProgress(progress.fractionCompleted, for: modelType.rawValue)
+                let isPreparing: Bool
+                switch progress.phase {
+                case .compiling: isPreparing = true
+                case .listing, .downloading: isPreparing = false
+                }
+                appState.updateModelDownloadProgress(
+                    progress.fractionCompleted, for: modelType.rawValue, isPreparing: isPreparing
+                )
             }
         }
     }

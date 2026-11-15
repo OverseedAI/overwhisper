@@ -155,4 +155,27 @@ final class WhisperModelStateTests: XCTestCase {
         XCTAssertEqual(state.modelDownloadProgress, 0)
     }
 
+
+    func testComponentCompletionStaysInPreparationUntilOuterOperationFinishes() {
+        let state = makeState()
+        let modelID = ParakeetModelType.ultra.rawValue
+        state.isDownloadingModel = true
+        state.currentlyDownloadingModel = modelID
+        state.updateModelDownloadProgress(0.4, for: modelID)
+        XCTAssertFalse(state.isPreparingModel)
+        state.updateModelDownloadProgress(1, for: modelID, isPreparing: true)
+        XCTAssertTrue(state.isPreparingModel)
+        state.updateModelDownloadProgress(0, for: modelID) // Next component starts.
+        XCTAssertTrue(state.isPreparingModel)
+        XCTAssertTrue(state.isDownloadingModel)
+        state.isDownloadingModel = false // Outer operation succeeds or fails.
+        XCTAssertFalse(state.isPreparingModel)
+        state.updateModelDownloadProgress(1, for: modelID, isPreparing: true)
+        XCTAssertFalse(state.isPreparingModel)
+        state.isDownloadingModel = true
+        state.currentlyDownloadingModel = ParakeetModelType.v3Multilingual.rawValue
+        state.updateModelDownloadProgress(1, for: modelID, isPreparing: true)
+        XCTAssertFalse(state.isPreparingModel)
+    }
+
 }

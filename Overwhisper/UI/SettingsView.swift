@@ -764,17 +764,18 @@ struct CustomWhisperModelRowView: View {
 /// Shared by curated Whisper models, exact Whisper variants, and Parakeet models.
 struct ModelDownloadProgressView: View {
     let progress: Double
+    var isPreparing = false
 
     var body: some View {
         HStack(spacing: 8) {
-            ProgressView(value: progress)
+            ProgressView(value: isPreparing ? nil : progress)
                 .progressViewStyle(.linear)
                 .frame(width: 60)
-            Text("\(Int(progress * 100))%")
+            Text(isPreparing ? "Preparing…" : "\(Int(progress * 100))%")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .monospacedDigit()
-                .frame(width: 35)
+                .frame(width: isPreparing ? 80 : 35)
         }
     }
 }
@@ -822,7 +823,7 @@ struct ParakeetModelRowView: View {
             Spacer()
 
             if isDownloading {
-                ModelDownloadProgressView(progress: appState.modelDownloadProgress)
+                ModelDownloadProgressView(progress: appState.modelDownloadProgress, isPreparing: appState.isPreparingModel)
             } else if isDownloaded {
                 HStack(spacing: 8) {
                     if isSelected {
