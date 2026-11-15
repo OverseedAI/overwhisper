@@ -6,6 +6,19 @@
     <description>Most recent updates to Overwhisper</description>
     <language>en</language>
     <item>
+      <title>Version 1.11.0</title>
+      <pubDate>Sun, 15 Nov 2026 02:26:37 +0000</pubDate>
+      <sparkle:version>52</sparkle:version>
+      <sparkle:shortVersionString>1.11.0</sparkle:shortVersionString>
+      <description><![CDATA[<h2>Version 1.11.0</h2><ul><li>Added Parakeet Ultra for fast, local transcription in 25 European languages. Download and select it under Settings → Transcription → Parakeet.</li><li>All local model downloads now share a progress bar and percentage. Parakeet also shows when downloaded models are being prepared.</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/OverseedAI/overwhisper/releases/download/v1.11.0/Overwhisper-1.11.0.dmg"
+        length="16083495"
+        type="application/octet-stream"
+        sparkle:edSignature="r07PjWKJlqClETn9zFAAr7Ppatoxi/nagFjlLMiGlTaP/j0sN5A64F7zEw7/SG/iYN9yis8blgj/5fcuqHseBg=="
+      />
+    </item>
+    <item>
       <title>Version 1.10.1</title>
       <pubDate>Mon, 09 Nov 2026 21:12:10 +0000</pubDate>
       <sparkle:version>50</sparkle:version>
